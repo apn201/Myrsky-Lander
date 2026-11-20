@@ -3,8 +3,10 @@
 //   RCS:     sharp bangs when jets fire (crews said they were loud)
 //   alarm:   master alarm tone until acknowledged
 //   thuds:   touchdown and impacts
-//   voice:   callouts with the browser's speech synthesis, in the style of the Apollo landings
-//            ("100 feet, down 3"), and Houston's "we're go on that alarm"
+//   radio:   each callout is a band-passed static burst with a squelch tail; Houston's lines are keyed
+//            with quindar tones (2525 Hz in, 2475 Hz out, 250 ms), as on the Apollo air-to-ground loops
+//   voice:   speech synthesis only with an English male voice (otherwise silent; the words are always
+//            shown as subtitles). Browser speech cannot be filtered, so it is never "radio" itself.
 // Code written with an AI assistant (Claude Code, Anthropic), 20 Nov 2026.
 
 export function createSound() {
@@ -46,20 +48,60 @@ export function createSound() {
     src.connect(f); f.connect(g); g.connect(master); src.start(t);
   }
 
-  let speaking = 0;
-  function say(text, rate = 1.05) {
-    if (!on || !window.speechSynthesis) return;
+  // an English male voice, or none
+  let voice = null;
+  const MALE = /david|mark|guy|daniel|george|ryan|james|thomas|alex|fred|eric|roger|christopher|andrew|brian|male/i;
+  const pick = () => {
+    const vs = window.speechSynthesis?.getVoices() ?? [];
+    voice = vs.find(v => /^en[-_](US|GB|AU)/i.test(v.lang) && MALE.test(v.name) && !/female/i.test(v.name)) ?? null;
+  };
+  if (window.speechSynthesis) { pick(); speechSynthesis.onvoiceschanged = pick; }
+
+  function tone(freq, t0, dur, vol) {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.value = freq; g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(vol, t0 + 0.01); g.gain.setValueAtTime(vol, t0 + dur - 0.01); g.gain.linearRampToValueAtTime(0, t0 + dur);
+    o.connect(g); g.connect(master); o.start(t0); o.stop(t0 + dur + 0.02);
+  }
+  // radio static: band-passed noise (300-3000 Hz voice channel) for dur seconds, then a squelch tail
+  function radio(dur, houston) {
+    if (!ctx || !on) return;
+    const t = ctx.currentTime;
+    if (houston) tone(2525, t, 0.25, 0.09);
+    const n = Math.ceil(ctx.sampleRate * (dur + 0.3));
+    const b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 + 0.6 * Math.sin(i / 900));
+    const src = ctx.createBufferSource(); src.buffer = b;
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 300;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3000;
+    const g = ctx.createGain(), t1 = t + (houston ? 0.25 : 0);
+    g.gain.setValueAtTime(0, t1); g.gain.linearRampToValueAtTime(0.05, t1 + 0.03);
+    g.gain.setValueAtTime(0.05, t1 + dur); g.gain.linearRampToValueAtTime(0.16, t1 + dur + 0.02);   // squelch tail
+    g.gain.exponentialRampToValueAtTime(0.0001, t1 + dur + 0.25);
+    src.connect(hp); hp.connect(lp); lp.connect(g); g.connect(master); src.start(t1);
+    if (houston) tone(2475, t1 + dur + 0.05, 0.25, 0.09);
+  }
+
+  let speaking = 0, subtitle = null;
+  function say(text, opts = {}) {
+    const houston = !!opts.houston;
+    subtitle?.(houston ? `HOUSTON: ${text}` : text);
+    const dur = Math.max(1.0, text.split(' ').length * 0.32);
+    radio(dur, houston);
+    if (!on || !voice) return;
     if (speechSynthesis.speaking && performance.now() - speaking < 4000) speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
-    u.rate = rate; u.pitch = 0.9; u.volume = 0.9; u.lang = 'en-US';
+    u.voice = voice; u.lang = voice.lang; u.rate = 1.12; u.pitch = 0.85; u.volume = 0.85;
     speaking = performance.now();
-    speechSynthesis.speak(u);
+    setTimeout(() => speechSynthesis.speak(u), houston ? 280 : 30);
   }
 
   return {
     get on() { return on; },
     toggle() { on = !on; if (master) master.gain.value = on ? 0.8 : 0; if (!on) speechSynthesis?.cancel(); return on; },
     say,
+    onSubtitle(fn) { subtitle = fn; },
+    get voiceName() { return voice ? voice.name : null; },
     thud(v) { burst(70, 0.7, 0.35 + Math.min(0.6, v * 0.08), Math.min(1.5, 0.3 + v * 0.25)); if (v > 3) burst(400, 0.5, 0.5, Math.min(1, v * 0.1)); },
     update(s, alarmLit) {
       if (!ctx) return;

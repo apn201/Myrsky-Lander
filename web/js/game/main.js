@@ -20,6 +20,9 @@ const input = createInput(document.body);
 $('loading').remove();
 
 const sound = createSound();
+let subT = 0;
+sound.onSubtitle(t => { $('callout').textContent = t; subT = performance.now(); });
+setInterval(() => { if (performance.now() - subT > 2800) $('callout').textContent = ''; }, 300);
 let s, dap, evs = [], scenario = SCENARIOS[0], paused = true, acc = 0, last = performance.now(), shownEvents = 0, shownPhase = '';
 let calls = {};
 function restart(sc = scenario) {
@@ -49,7 +52,7 @@ function toggleMode() {
 }
 function engineStop() { if (s.stage === 'full') s.engStop = !s.engStop; else if (s.phase === 'ascent') s.apsOn = !s.apsOn; }
 function doLiftoff() { if (abortStage(s) || liftoff(s)) { dap.hold = null; $('msg').hidden = true; shownPhase = s.phase; } }
-function ackAlarm() { s.alarmQuiet = true; s.everAcked = true; if (s.alarm && !s.alarm.acked) { s.alarm.acked = true; if (!calls.go) { calls.go = true; setTimeout(() => sound.say("Roger. We're go on that alarm."), 1800); } } }
+function ackAlarm() { s.alarmQuiet = true; s.everAcked = true; if (s.alarm && !s.alarm.acked) { s.alarm.acked = true; if (!calls.go) { calls.go = true; setTimeout(() => sound.say("Roger. We're go on that alarm.", { houston: true }), 1800); } } }
 function menu() {
   paused = true;
   $('menu-list').innerHTML = '';
@@ -233,5 +236,8 @@ function callouts(s, g) {
   if (s.firstTouch && !calls.td) { calls.td = true; sound.thud(s.firstTouch.vVert); }
   const hard = s.events.length && s.events[s.events.length - 1];
   if (hard && hard.sev >= 2 && hard.t > lastThud && /HIT|FAILED|BOTTOMED|BREACHED/.test(hard.text)) { lastThud = hard.t; sound.thud(5); }
-  if (s.phase === 'down' && !calls.down) { calls.down = true; setTimeout(() => sound.say(s.report.worst <= 1 ? 'Engine stop. Houston, we are down.' : 'We are down. Assessing damage.'), 600); }
+  if (s.phase === 'down' && !calls.down) { calls.down = true; setTimeout(() => {
+    sound.say(s.report.worst <= 1 ? 'Engine stop. Houston, we are down.' : 'We are down. Assessing damage.');
+    if (s.report.worst <= 1) setTimeout(() => sound.say('Roger, we copy you down. You got a bunch of guys about to turn blue.', { houston: true }), 3200);
+  }, 600); }
 }
