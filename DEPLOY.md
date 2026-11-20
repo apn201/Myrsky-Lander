@@ -1,83 +1,91 @@
-# Deploy prompt for OpenClaw (Helppox, Rocky Linux + Apache)
+# Deploy prompt for OpenClaw: Lander on Helppox
 
-Copy everything between the two lines into OpenClaw. First replace `lander.example.com` with the real domain or subdomain (it appears several times; replace all). The domain's DNS A/AAAA record must already point to Helppox. The GitHub repository `apn201/Myrsky-Lander` must exist and be public.
+Game: Myrsky Lander, repository https://github.com/apn201/Myrsky-Lander
+Address: https://lander.helppox.com (CNAME to Helppox)
+Directory on Helppox: `/var/www/lander`
+
+Copy everything between the two lines into a fresh OpenClaw chat. Nothing needs filling in.
 
 ---
 
-Deploy a static website (a browser game) to my Rocky Linux server (Helppox), which runs Apache (httpd).
+Deploy a static browser game to my Rocky Linux server Helppox (Apache httpd). This is a NEW, SEPARATE site. Other sites run on this server and must not be disturbed in any way.
 
 Values:
-- Domain: `lander.example.com`
-- Source: the `web/` folder of the public git repository `https://github.com/apn201/Myrsky-Lander.git`, branch `main`
-- Document root: `/var/www/myrsky-lander`
+- Domain: `lander.helppox.com` (the CNAME already points to Helppox)
+- Source: the `web/` folder of the public repository `https://github.com/apn201/Myrsky-Lander.git`, branch `main`
+- Directory: `/var/www/lander`
 
-Rules:
-- Do not change, disable or restart any other site (the Myrsky / Ocean of Storms site on this server must stay as it is). Use `systemctl reload httpd`, never restart.
-- Do not install packages, open firewall ports or change SELinux policy without asking me first.
-- Stop and report if any step fails.
-- Run every command that writes under `/var/www`, `/etc/httpd` or `/usr/local/bin` (and `restorecon`, `systemctl`, `certbot`) with `sudo`.
+Hard rules:
+- You may create or change ONLY these paths: `/tmp/lander-src`, `/var/www/lander`, `/etc/httpd/conf.d/lander.conf`, the certificate files certbot makes for `lander.helppox.com` (and its `lander-le-ssl.conf`), `/usr/local/bin/lander-update`, and the logs `/var/log/httpd/lander_*.log`.
+- Do not open, edit, move, rename or delete anything else: no other directory in `/var/www`, no other file in `/etc/httpd/`, no other update script. If a step seems to need any other path, stop and ask me.
+- Before every `rsync --delete` or `rm -rf`, print the exact command and check that the target is exactly `/var/www/lander/` or `/tmp/lander-src`. Never run them with a variable or empty path.
+- Use `systemctl reload httpd`, never restart or stop.
+- Do not install packages, open firewall ports or change SELinux policy without asking me.
+- Use `sudo` for every command that writes outside `/tmp`.
+- Stop and report if any step fails. Do not improvise a fix that touches other paths.
 
 Steps:
-1. Look first, change nothing: show the output of `cat /etc/rocky-release`, `systemctl is-active httpd`, `ls /etc/httpd/conf.d/`, `httpd -M | grep -E "mime|deflate|headers|ssl|rewrite"`, `which git rsync certbot`, and `ls -la /var/www/myrsky-lander` (it should not exist yet; if it exists, ask me before overwriting).
-2. Fetch the site (plain static files: no build step, no PHP, no database, no Node):
+1. Look only, change nothing. Show:
+   `cat /etc/rocky-release`, `systemctl is-active httpd`, `ls /etc/httpd/conf.d/`, `which git rsync certbot`, `ls -la /var/www/lander`.
+   `/var/www/lander` should not exist. If it exists, show its contents and ask me before continuing.
+   Note: an earlier failed attempt may have created an empty `/var/www/myrsky-lander`. Do not touch it; just tell me whether it exists and what is in it.
+2. Fetch and copy (plain static files: no build, no PHP, no database, no Node):
    ```bash
-   rm -rf /tmp/lander && git clone --depth 1 https://github.com/apn201/Myrsky-Lander.git /tmp/lander
-   mkdir -p /var/www/myrsky-lander
-   rsync -a --delete /tmp/lander/web/ /var/www/myrsky-lander/
+   rm -rf /tmp/lander-src
+   git clone --depth 1 https://github.com/apn201/Myrsky-Lander.git /tmp/lander-src
+   sudo mkdir -p /var/www/lander
+   sudo rsync -a --delete /tmp/lander-src/web/ /var/www/lander/
    ```
-   If rsync is missing, use `cp -a /tmp/lander/web/. /var/www/myrsky-lander/`. `index.html` and `.htaccess` must end up directly in `/var/www/myrsky-lander/`.
-3. Permissions and SELinux:
+   `index.html` and `.htaccess` must end up directly in `/var/www/lander/`. Show `ls -la /var/www/lander`.
+3. Permissions and SELinux, for this directory only:
    ```bash
-   chown -R root:root /var/www/myrsky-lander
-   find /var/www/myrsky-lander -type d -exec chmod 755 {} +
-   find /var/www/myrsky-lander -type f -exec chmod 644 {} +
-   restorecon -Rv /var/www/myrsky-lander
+   sudo chown -R root:root /var/www/lander
+   sudo find /var/www/lander -type d -exec chmod 755 {} +
+   sudo find /var/www/lander -type f -exec chmod 644 {} +
+   sudo restorecon -Rv /var/www/lander
    ```
-4. Create `/etc/httpd/conf.d/myrsky-lander.conf`:
+4. Create the NEW file `/etc/httpd/conf.d/lander.conf` (if it already exists, stop and ask me):
    ```apache
    <VirtualHost *:80>
-     ServerName lander.example.com
-     DocumentRoot /var/www/myrsky-lander
-     <Directory /var/www/myrsky-lander>
+     ServerName lander.helppox.com
+     DocumentRoot /var/www/lander
+     <Directory /var/www/lander>
        Options -Indexes
        AllowOverride FileInfo Indexes Options
        Require all granted
      </Directory>
-     ErrorLog /var/log/httpd/myrsky-lander_error.log
-     CustomLog /var/log/httpd/myrsky-lander_access.log combined
+     ErrorLog /var/log/httpd/lander_error.log
+     CustomLog /var/log/httpd/lander_access.log combined
    </VirtualHost>
    ```
-   The site's own `.htaccess` sets the MIME types (`.js` as text/javascript, which ES modules need; `.i16` and `.bin` as application/octet-stream; `.wav` as audio/wav), compression and cache headers. It needs `mod_mime`, `mod_deflate` and `mod_headers`; these are on by default in Rocky's httpd. If one is missing, tell me.
-5. `apachectl configtest`. Only if it says `Syntax OK`: `systemctl reload httpd`.
-6. HTTPS: if certbot is installed, run `certbot --apache -d lander.example.com --redirect`. If certbot is not installed, tell me and stop here; do not install it without asking.
-7. Firewall: show `firewall-cmd --list-services`. If http or https is missing, ask me before adding it.
-8. Check from the server (use https if step 6 worked, else http):
-   - `curl -sI https://lander.example.com/` → 200, `text/html`
-   - `curl -s https://lander.example.com/ | grep -c "<title>Myrsky Lander"` → 1
-   - `curl -sI https://lander.example.com/js/game/main.js` → 200, `text/javascript`
-   - `curl -sI https://lander.example.com/assets/terrain_1024.i16` → 200
-   - `curl -sI https://lander.example.com/assets/audio/chatter.wav` → 200, `audio/wav`
-   - `curl -sI https://lander.example.com/assets/` → 403 (no directory listing)
-   - `curl -sI https://<the Myrsky domain>/` → still 200 (the other site is untouched)
-9. Create `/usr/local/bin/lander-update` so I can update the game later with one command:
+   The game's own `.htaccess` sets the MIME types (`.js` text/javascript, `.i16` and `.bin` application/octet-stream, `.wav` audio/wav), compression and cache headers.
+5. `sudo apachectl configtest`. Only if it says `Syntax OK`: `sudo systemctl reload httpd`. If it reports an error, remove only `/etc/httpd/conf.d/lander.conf` and stop.
+6. HTTPS, for this domain only: `sudo certbot --apache -d lander.helppox.com --redirect`. Never run certbot without `-d lander.helppox.com`, and do not choose any other certificate or vhost if it asks; stop and ask me instead.
+7. Check:
+   - `curl -sI https://lander.helppox.com/` → 200, `text/html`
+   - `curl -s https://lander.helppox.com/ | grep -c "<title>Myrsky Lander"` → 1
+   - `curl -sI https://lander.helppox.com/js/game/main.js` → 200, `text/javascript`
+   - `curl -sI https://lander.helppox.com/assets/terrain_1024.i16` → 200
+   - `curl -sI https://lander.helppox.com/assets/audio/chatter.wav` → 200, `audio/wav`
+   - `curl -sI https://lander.helppox.com/assets/` → 403
+   - `ls /etc/httpd/conf.d/` → the same list as in step 1, plus only `lander.conf` and `lander-le-ssl.conf`
+8. Create `/usr/local/bin/lander-update` (new file; if it exists, ask me):
    ```bash
    #!/bin/bash
-   set -e
-   rm -rf /tmp/lander && git clone --depth 1 https://github.com/apn201/Myrsky-Lander.git /tmp/lander
-   rsync -a --delete /tmp/lander/web/ /var/www/myrsky-lander/
-   chown -R root:root /var/www/myrsky-lander
-   find /var/www/myrsky-lander -type d -exec chmod 755 {} +
-   find /var/www/myrsky-lander -type f -exec chmod 644 {} +
-   restorecon -R /var/www/myrsky-lander
-   echo "Updated to $(git -C /tmp/lander log -1 --format='%h %s')"
+   set -euo pipefail
+   rm -rf /tmp/lander-src
+   git clone --depth 1 https://github.com/apn201/Myrsky-Lander.git /tmp/lander-src
+   test -f /tmp/lander-src/web/index.html
+   rsync -a --delete /tmp/lander-src/web/ /var/www/lander/
+   chown -R root:root /var/www/lander
+   find /var/www/lander -type d -exec chmod 755 {} +
+   find /var/www/lander -type f -exec chmod 644 {} +
+   restorecon -R /var/www/lander
+   echo "Lander updated to $(git -C /tmp/lander-src log -1 --format='%h %s')"
    ```
-   `chmod 755 /usr/local/bin/lander-update`. Do not schedule it; I will run it by hand.
-10. Report back: the final URL, the vhost file path, whether HTTPS works, and the output of the checks in step 8.
+   `sudo chmod 755 /usr/local/bin/lander-update`. Do not schedule it.
+9. Report: the URL, whether HTTPS works, the outputs of step 7, and whether `/var/www/myrsky-lander` exists.
 
-The game must be open to everyone without a login. Do not add basic auth, IP restrictions or a robots block.
+The game must be open to everyone without a login.
 
 ---
-
-## If GitHub is not reachable from the server
-
-Copy the `web/` folder to the server yourself (for example `scp -r web/ helppox:/tmp/lander-web`) and tell OpenClaw to use `/tmp/lander-web/` instead of `/tmp/lander/web/` in steps 2 and 9.
