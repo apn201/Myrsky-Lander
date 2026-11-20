@@ -1,0 +1,15 @@
+{
+ "source": "lm_cutout_source.webp",
+ "width": 1448,
+ "height": 1086,
+ "m_per_px": 0.007868,
+ "axis_u": 0.511,
+ "sole_m": 0.7,
+ "stage_m": 1.314,
+ "side_pads_px": [
+  139.5,
+  1340.5
+ ],
+ "sole_px": 997.0,
+ "deck_px": 500
+}

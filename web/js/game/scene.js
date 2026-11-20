@@ -86,6 +86,14 @@ export async function createScene(canvas) {
 
   // lander: shadow-only 3D shape + photo cut-outs
   const lm = await loadLM();
+  // the photo's own scale and anchors (the lander cut-out can be replaced without code changes)
+  try {
+    const pm = await (await fetch('assets/lm_photo.json')).json();
+    Object.assign(PHOTO, { PW: pm.width * pm.m_per_px, PH: pm.height * pm.m_per_px, AXU: pm.axis_u, SOLE: pm.sole_m, STAGE: pm.stage_m });
+    const geo = new THREE.PlaneGeometry(PHOTO.PW, PHOTO.PH);
+    geo.translate(PHOTO.PW * (0.5 - PHOTO.AXU), PHOTO.PH / 2 - PHOTO.SOLE, 0);
+    lm.full.geometry = geo; lm.desc.geometry = geo;
+  } catch (e) { console.warn('lm_photo.json not loaded, keeping the built-in photo geometry', e); }
   const wrap = part => {                       // NASA model in its own units/orientation, as Myrsky set it up
     const outer = new THREE.Group(), inner = new THREE.Group();
     inner.scale.setScalar(1.42); inner.rotation.y = -Math.PI / 2; inner.position.y = -0.15;
@@ -94,7 +102,7 @@ export async function createScene(canvas) {
   };
   const shadowD = wrap(lm.descent), shadowA = wrap(lm.ascent);
   const asc = await ascentPhoto(lm.full.material.uniforms.map.value, lm.desc.material.uniforms.map.value);
-  const ascentPhotoMesh = new THREE.Mesh(lm.full.geometry, lm.full.material.clone());
+  const ascentPhotoMesh = new THREE.Mesh(lm.full.geometry, lm.full.material.clone());   // geometry set above
   ascentPhotoMesh.material.uniforms = THREE.UniformsUtils.clone(lm.full.material.uniforms);
   ascentPhotoMesh.material.uniforms.map.value = asc;
   for (const k of ['tsHeight', 'tsSun', 'tsOn', 'tsSteps']) ascentPhotoMesh.material.uniforms[k] = lm.full.material.uniforms[k];
@@ -248,6 +256,7 @@ export async function createScene(canvas) {
 // Leg damage on the rigid photo: the legs are shortened by each side's strut stroke (the body sinks
 // toward the footpads) and a failed leg is cut out (a folded 3D strut is drawn instead). Screen left is
 // west, the forward (+Z) leg; right is the aft (-Z) leg; the side (±Y) legs stand in the middle.
+// photo scale and anchor points, from web/assets/lm_photo.json (tools/make_lm_from_cutout.py)
 const PHOTO = { PW: 825 * 0.010687, PH: 680 * 0.010687, AXU: 0.545, SOLE: 0.53, STAGE: 1.42 };
 function squashableLegs(mat) {
   mat.uniforms.legC = { value: new THREE.Vector3() };
@@ -264,7 +273,12 @@ function squashableLegs(mat) {
           uvS.y = (ys + SOLE) / PH;
           if ((xm < 0.0 ? legBroken.x : legBroken.y) > 0.5 && abs(xm) > 2.15) discard;
         }
-        vec4 t = texture2D(map, uvS);`);
+        vec4 t = texture2D(map, uvS);
+        // the cut-out is evenly lit: shade it for the low Sun in the east (screen and image left)
+        float sunSide = mix(1.18, 0.58, smoothstep(-0.9, 0.9, xm / 4.7));
+        float under = ym < STAGE ? 0.82 : 1.0;
+        float photoShade = sunSide * under;`)
+    .replace('gl_FragColor = vec4(c * bright * L, 1.0);', 'gl_FragColor = vec4(c * bright * L * photoShade, 1.0);');
   mat.needsUpdate = true;
 }
 function setLegs(mat, legs) {
@@ -345,7 +359,8 @@ function buildFx() {
         const j = new THREE.Vector3(...padJointBody(L.leg, st));
         const out = new THREE.Vector3(0, L.leg.dir[1], L.leg.dir[2]);
         if (L.probe) {
-          L.probe.visible = full && !st.broken;
+          // the photo shows the probes facing the camera; only the side leg's (in the flight plane) is drawn
+          L.probe.visible = full && !st.broken && L.leg.dir[2] !== 0;
           // straight down until it touches, then bent back along the ground
           const end = s.contactLight || st.contact
             ? j.clone().add(new THREE.Vector3(-GEAR.padDrop - 0.1, 0, 0)).addScaledVector(out, 1.6)
