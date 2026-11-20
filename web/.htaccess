@@ -1,0 +1,23 @@
+# Myrsky Lander - Apache settings (needs AllowOverride FileInfo Indexes Options or the same lines in the vhost)
+Options -Indexes
+
+<IfModule mod_mime.c>
+  AddType model/gltf-binary .glb
+  AddType application/octet-stream .i16 .bin
+  AddType text/javascript .js .mjs
+  AddType application/json .json
+  AddType audio/wav .wav
+</IfModule>
+
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/css text/javascript application/json application/octet-stream model/gltf-binary audio/wav
+</IfModule>
+
+<IfModule mod_headers.c>
+  <FilesMatch "\.(jpg|png|bin|i16|wav)$">
+    Header set Cache-Control "public, max-age=604800"
+  </FilesMatch>
+  <FilesMatch "\.(html|js|css|json)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>
