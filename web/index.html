@@ -45,6 +45,18 @@
   #fd.good #fd-dot { background: #9dffb0; box-shadow: 0 0 6px #9dffb0; }
   #fd .arr { position: absolute; font: 16px ui-monospace, monospace; color: #ffcf5a; text-shadow: 0 0 3px #000; }
   #fd-l { left: -86px; top: -11px; } #fd-r { left: 72px; top: -11px; } #fd-u { left: -6px; top: -90px; } #fd-d { left: -6px; top: 68px; }
+  #master { position: fixed; top: max(12px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); font: bold 13px ui-monospace, monospace;
+    padding: 6px 12px; border: 1px solid #5a1a10; color: #5a1a10; background: rgba(0,0,0,.4); letter-spacing: .08em; cursor: pointer; }
+  #master.on { color: #fff; background: #d2281a; border-color: #ff6a4d; animation: blink .5s steps(2) infinite; }
+  #prog { position: fixed; top: calc(max(12px, env(safe-area-inset-top)) + 34px); left: 50%; transform: translateX(-50%); font: 13px ui-monospace, monospace; color: #ffcf5a; text-shadow: 0 0 4px #000; }
+  #scn { position: fixed; bottom: max(16px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); font: 11px ui-monospace, monospace; color: var(--dim); pointer-events: none; white-space: nowrap; }
+  #menu { position: fixed; inset: 0; background: rgba(0,0,0,.88); display: grid; place-items: center; overflow: auto; }
+  #menu[hidden] { display: none; }
+  #menu > div { max-width: min(92vw, 640px); padding: 16px; font: 13px/1.45 ui-monospace, monospace; color: var(--hud); }
+  #menu h1 { font-size: 22px; letter-spacing: .1em; margin: 0 0 4px; } #menu p { margin: 0 0 14px; opacity: .75; }
+  #menu-list { display: grid; gap: 8px; }
+  #menu-list button { text-align: left; display: grid; gap: 3px; padding: 10px 12px; }
+  #menu-list b { font-size: 14px; } #menu-list span { opacity: .75; font-size: 12px; line-height: 1.4; }
   #loading { position: fixed; inset: 0; display: grid; place-items: center; font: 14px ui-monospace, monospace; color: var(--hud); }
   #thr-bar { position: fixed; left: 16px; bottom: max(16px, env(safe-area-inset-bottom)); width: 10px; height: 26vh; border: 1px solid var(--dim); pointer-events: none; }
   #thr-cmd { position: absolute; bottom: 0; left: 0; right: 0; background: var(--hud); opacity: .7; }
@@ -101,22 +113,28 @@
   </div>
 </div>
 <div id="adv" class="hud"></div>
+<div id="master" title="press to silence (A)">MASTER ALARM</div><div id="prog"></div><div id="scn"></div>
 <div id="fd"><div class="ring"></div><div class="h"></div><div class="v"></div><div class="box"></div><div id="fd-dot"></div>
   <span class="arr" id="fd-l">◀</span><span class="arr" id="fd-r">▶</span><span class="arr" id="fd-u">▲</span><span class="arr" id="fd-d">▼</span></div>
+<div id="menu" hidden><div>
+  <h1>MYRSKY LANDER</h1>
+  <p>Land a lunar module on the real Apollo 12 site. Real terrain, real physics, real trouble. Keys: ←→ lean, ↑↓ descent rate, space engine stop, M manual throttle, enter abort stage / liftoff, A alarm acknowledge, 1-4 isolate RCS quads, Z zoom, V sound, N this menu.</p>
+  <div id="menu-list"></div>
+</div></div>
 <div id="loading">loading the Apollo 12 landing site…</div>
 <div id="log" class="hud"></div>
 <div id="thr-bar"><div id="thr-cmd"></div></div>
 <div id="help" class="hud">
-  <span class="keys">keep the dot in the crosshair: ←→ lean · ↑↓ descent rate (1 ft/s per click) · space engine stop · M manual throttle · Z zoom · R restart</span>
+  <span class="keys">keep the dot in the crosshair: ←→ lean · ↑↓ descent rate (1 ft/s per click) · space engine stop · M manual throttle · A alarm · enter abort · N scenarios</span>
   <span class="touch">keep the dot in the crosshair: slide sideways to lean, up/down for descent rate</span>
 </div>
-<div id="touch-buttons"><button id="btn-stop">ENG STOP</button><button id="btn-mode">MODE</button><button id="btn-zoom">ZOOM</button></div>
+<div id="touch-buttons"><button id="btn-stop">ENG STOP</button><button id="btn-mode">MODE</button><button id="btn-zoom">ZOOM</button><button id="btn-ack">ALARM ACK</button><button id="btn-abort">ABORT STAGE</button></div>
 
 <div id="msg" hidden><div>
   <h2 id="msg-title"></h2>
   <ul id="msg-body"></ul>
   <p id="lift-note" style="text-align:center;opacity:.8"></p>
-  <div class="buttons"><button id="btn-lift" hidden>LIFT OFF (enter)</button><button id="btn-again">FLY AGAIN (R)</button></div>
+  <div class="buttons"><button id="btn-lift" hidden>LIFT OFF (enter)</button><button id="btn-again">FLY AGAIN (R)</button><button id="btn-menu">SCENARIOS (N)</button></div>
 </div></div>
 
 <script type="module" src="js/game/main.js"></script>

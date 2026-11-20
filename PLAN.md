@@ -10,7 +10,7 @@
 
 ### Prototype status (20 Nov 2026)
 
-6-DOF rigid body (`physics.js`), autopilot (`dap.js`), vehicle data (`lm.js`), checked by `node tools/test_physics.mjs` (25 checks, including boulders under the engine and under a footpad, a keyboard-style pilot that only follows the flight director, a too-fast start that needs manual full throttle, and an 8° slope).
+6-DOF rigid body (`physics.js`), autopilot (`dap.js`), vehicle data (`lm.js`), checked by `node tools/test_physics.mjs` (27 checks, including engine-out abort, a stuck jet and quad isolation, boulders under the engine and under a footpad, a keyboard-style pilot that only follows the flight director, a too-fast start that needs manual full throttle, and an 8° slope).
 - Real values from Luminary 131 (Apollo 13 LM software, in the Space pilot project): descent engine exhaust velocity 2,955.9 m/s and FTP thrust 43,455 N, throttle lag 0.2 s, ascent exhaust velocity 3,030 m/s, 14 ms minimum jet pulse, the jet table for U/V rotation and X translation.
 - 16 RCS jets at their quads; torque about the moving centre of mass; inertia from the mass layout.
 - Rate command / attitude hold, P66 rate of descent (1 ft/s per click) or manual throttle, trim gimbal.
@@ -43,3 +43,11 @@ Simplifications and estimates still open: leg truss modelled as one vertical cru
 4. Mobile touch controls, then deploy.
 
 Start around 500 m above Surveyor crater. Apollo's final approach began about 2 km up and 7 km out, but the 2 m height model only covers the area around the site.
+
+## Scenarios and failures (20 Nov 2026)
+
+`scenarios.js`: Apollo 12 pinpoint; Apollo 11 (1202/1201 alarms with computer restarts that hold the throttle and freeze displays, target in boulders, low fuel); jet stuck on (isolate quad, keys 1-4); landing radar failure (estimate drifts, altitude marked ?); throttle stuck at 18 %; descent engine failure with in-flight ABORT STAGE (descent stage falls away). Master alarm light and tone until acknowledged (A).
+
+Sound (`sound.js`): synthesized cabin sounds (engine rumble, RCS bangs, master alarm, thuds) and speech-synthesis callouts ("100 feet, down 3", "Contact light", "Sixty seconds", "We're go on that alarm"). No recordings yet; the Space pilot project has a reviewed original Apollo radio cue that could be reused.
+
+Look: post pass (`post.js`) with depth of field on the lander, ACES tone curve, grade, vignette, grain; far terrain gets visual-only relief outside the 2 m model; camera on the north side so the low eastern Sun lights the photo's sunlit side; contact shadow under the lander.

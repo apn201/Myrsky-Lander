@@ -1,6 +1,6 @@
 // Headless checks of the LM physics and autopilot.  Run: node tools/test_physics.mjs
 // Code written with an AI assistant (Claude Code, Anthropic), 20 Nov 2026.
-import { newState, step, massProps, MOON_G, padHeight, tilt, attitude, liftoff } from '../web/js/game/physics.js';
+import { newState, step, massProps, MOON_G, padHeight, tilt, attitude, liftoff, abortStage } from '../web/js/game/physics.js';
 import { createDap, dapUpdate, setMode, RATE_MAX } from '../web/js/game/dap.js';
 import { DPS, GEAR, jet } from '../web/js/game/lm.js';
 import { cross, dot, qrot } from '../web/js/game/vec.js';
@@ -192,6 +192,29 @@ function dropOn(world, x) {
   const pad = dropOn(rockWorld(-4.72, 0, 1.0, 0.7), 0);
   check('footpad on a 0.7 m boulder: lander rests tilted', pad.phase === 'down' && tilt(pad) > 2 * DEG,
     `${pad.report?.verdict}, tilt ${(tilt(pad) / DEG).toFixed(1)}° ${sevs(pad)}`);
+}
+
+// failures
+{
+  // descent engine quits at 160 m while coming down at 5 m/s: abort stage climbs out
+  const s = newState({ alt: 160, vel: [-6, -5, 0], q: attitude(5 * DEG) });
+  const d = createDap(); setMode(d, s, 'P66');
+  s.dpsFailed = true;
+  fly(s, d, NOSTICK, 0.8);
+  const ok = abortStage(s);
+  fly(s, d, NOSTICK, 120, s => s.phase !== 'ascent');
+  check('engine out at 160 m: abort stage climbs through 300 m', ok && s.phase === 'climbing', `${s.phase} t=${s.t.toFixed(0)} s, descent stage ${s.descentPose.vel ? 'still falling' : 'on the ground'}`);
+
+  // a jet stuck on: the autopilot holds attitude but burns RCS; isolating the quad stops the drain
+  const j = newState({ alt: 2000, vel: [0, 0, 0], q: attitude(0) });
+  const dj = createDap(); setMode(dj, j, 'P66');
+  j.fail.stuckJet = 6;
+  const r0 = j.rcsFuel; fly(j, dj, NOSTICK, 10); const burnStuck = r0 - j.rcsFuel;
+  const tiltStuck = tilt(j) / DEG;
+  j.isolated.add('B');
+  const r1 = j.rcsFuel; fly(j, dj, NOSTICK, 10); const burnIso = r1 - j.rcsFuel;
+  check('stuck jet 6: costs RCS, isolating quad B stops the drain and keeps control', burnStuck > 2 * burnIso && Math.hypot(...j.w) < 1 * DEG,
+    `RCS ${burnStuck.toFixed(1)} kg/10 s stuck, ${burnIso.toFixed(1)} isolated; tilt ${tiltStuck.toFixed(1)}° then ${(tilt(j) / DEG).toFixed(1)}°`);
 }
 
 process.exit(fails ? 1 : 0);

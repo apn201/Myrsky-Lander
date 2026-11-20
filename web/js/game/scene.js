@@ -12,6 +12,7 @@
 import * as THREE from 'three';
 import { loadTerrain, heightTexture, buildTerrainMesh, buildWideMesh, terrainMaterial, heightAt, useTerrainShadow, addTerrainShadow } from '../myrsky/terrain.js';
 import { makeRocks, rockMeshes } from './rocks.js';
+import { createPost } from './post.js';
 import { loadLM } from '../myrsky/models.js';
 import { skyState } from '../myrsky/sky.js';
 import { DATES } from '../myrsky/data.js';
@@ -32,8 +33,10 @@ export async function createScene(canvas) {
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  // tone curve and colour space are done in the post pass (post.js)
+  renderer.toneMapping = THREE.NoToneMapping;
+  renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+  const post = createPost(renderer);
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
@@ -96,13 +99,34 @@ export async function createScene(canvas) {
   for (const k of ['tsHeight', 'tsSun', 'tsOn', 'tsSteps']) ascentPhotoMesh.material.uniforms[k] = lm.full.material.uniforms[k];
   const photoFull = new THREE.Group(), photoDesc = new THREE.Group(), photoAsc = new THREE.Group();
   photoFull.add(lm.full); photoDesc.add(lm.desc); photoAsc.add(ascentPhotoMesh);
+  // The camera looks south from the north side: the low eastern Sun then lights the photo's left side, as
+  // in the crew photo itself, and the westward approach runs left to right on screen.
+
+  // soft contact shadow (ambient occlusion) under the lander when it is near the ground: with the Sun 5°
+  // up the cast shadow falls far away, and without this the lander looks pasted on
+  const aoTex = (() => {
+    const c = document.createElement('canvas'); c.width = c.height = 128;
+    const g = c.getContext('2d'), gr = g.createRadialGradient(64, 64, 4, 64, 64, 64);
+    gr.addColorStop(0, 'rgba(0,0,0,0.85)'); gr.addColorStop(0.45, 'rgba(0,0,0,0.45)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+    return new THREE.CanvasTexture(c);
+  })();
+  const aoMat = new THREE.MeshBasicMaterial({ map: aoTex, transparent: true, depthWrite: false, opacity: 0 });
+  const aoD = new THREE.Mesh(new THREE.PlaneGeometry(11, 11), aoMat), aoA = new THREE.Mesh(new THREE.PlaneGeometry(6, 6), aoMat.clone());
+  for (const m of [aoD, aoA]) { m.rotation.x = -Math.PI / 2; m.renderOrder = 1; scene.add(m); }
+  const placeAO = (m, x, z, y, size) => {
+    const g = heightAt(x, -z), h = Math.max(0, y - g);
+    m.position.set(x, g + 0.06, z);
+    m.material.opacity = 0.75 * (1 - Math.min(1, h / (size * 2)));
+    const sc = 1 + h / (size * 3); m.scale.set(sc, sc, sc);
+  };
   scene.add(photoFull, photoDesc, photoAsc);
   lm.desc.visible = true;
   const sunTint = new THREE.Color(1, 0.97, 0.94).multiplyScalar(PHYS_SUN);
   const fill = new THREE.Color(1, 0.97, 0.92).multiplyScalar(PHYS_SUN * sinEl * 0.11 * 1.03);
   for (const mesh of [lm.full, lm.desc, ascentPhotoMesh]) {
     const u = mesh.material.uniforms;
-    u.bright.value = 0.1 * S * 3.0; u.sunTint.value.copy(sunTint); u.fillTint.value.copy(fill);
+    u.bright.value = 0.1 * S * 2.4; u.sunTint.value.copy(sunTint); u.fillTint.value.copy(fill);
     squashableLegs(mesh.material);
   }
 
@@ -115,6 +139,7 @@ export async function createScene(canvas) {
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    post.setSize();
   };
   addEventListener('resize', resize);
   resize();
@@ -129,10 +154,10 @@ export async function createScene(canvas) {
     g.quaternion.copy(TQ(qmul(pose.q, qconj(Q_UPRIGHT))));
   };
   const placePhoto = (g, pose) => {
-    // the photo stands in the plane facing the camera (south), turned by the lean in that plane
+    // the photo stands in the flight plane facing the camera (north), turned by the lean in that plane
     const up = qrot(pose.q, [1, 0, 0]);
-    g.rotation.set(0, 0, Math.atan2(-up[0], up[1]));
-    g.position.copy(bodyToWorld(pose, [PAD_BOTTOM_X + 0.15, 0, 0])).add(new THREE.Vector3(0, 0, 2.0));
+    g.rotation.set(0, Math.PI, -Math.atan2(-up[0], up[1]));
+    g.position.copy(bodyToWorld(pose, [PAD_BOTTOM_X + 0.15, 0, 0])).add(new THREE.Vector3(0, 0, -2.0));
   };
 
   const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
@@ -155,23 +180,28 @@ export async function createScene(canvas) {
       else { placePhoto(photoDesc, descentPose); placePhoto(photoAsc, ascentPose); }
       setLegs(s.stage === 'full' ? lm.full.material : lm.desc.material, s.stage === 'full' ? s.legs : s.descentPose.legs);
       fx.update(s);
+      const dO = s.stage === 'full' ? null : s.descentPose.origin;
+      if (s.stage === 'full') { const b = bodyToWorld(ascentPose, [PAD_BOTTOM_X, 0, 0]); placeAO(aoD, b.x, b.z, b.y, 5); aoA.material.opacity = 0; }
+      else { placeAO(aoD, dO[0], dO[2], dO[1] + PAD_BOTTOM_X, 5); const b = bodyToWorld(ascentPose, [0, 0, 0]); placeAO(aoA, b.x, b.z, b.y - 1.0, 3); }
 
       sunLight.target.position.copy(photoFull.visible ? photoFull.position : photoAsc.position);
       sunLight.position.copy(sunLight.target.position).addScaledVector(sunW, 1500);
       for (const m of [terrainMat, wideMat]) m.userData.uniforms.camPos.value.copy(camera.position);
 
-      // side view from the south, zoomed out arcade-style: lander high in the frame, ground below
+      // side view from the north, zoomed out arcade-style: lander high in the frame, ground below
       const d = (45 + Math.min(h, 400) * 0.75) * ZOOMS[zoom];
       const gy = heightAt(s.pos[0], -s.pos[2]);
       const lookY = Math.max(gy + 2, s.pos[1] - d * 0.15);
-      const wantPos = new THREE.Vector3(s.pos[0] + s.vel[0] * 0.8, Math.max(gy + 3, lookY + d * 0.2), s.pos[2] + d);
+      const wantPos = new THREE.Vector3(s.pos[0] + s.vel[0] * 0.8, Math.max(gy + 3, lookY + d * 0.2), s.pos[2] - d);
       const wantLook = new THREE.Vector3(s.pos[0] + s.vel[0] * 0.8, lookY, s.pos[2]);
       const k = first ? 1 : 1 - Math.exp(-dt * 2.5);
       camPos.lerp(wantPos, k); camLook.lerp(wantLook, k);
       first = false;
       camera.position.copy(camPos);
       camera.lookAt(camLook);
-      renderer.render(scene, camera);
+      post.uniforms.focus.value = camera.position.distanceTo(tmp.set(s.pos[0], s.pos[1], s.pos[2]));
+      post.uniforms.aperture.value = 0.55;
+      post.render(scene, camera);
 
       // screen position of the lander, for the flight director overlay
       tmp.set(s.pos[0], s.pos[1], s.pos[2]).project(camera);
@@ -205,9 +235,10 @@ function squashableLegs(mat) {
   mat.needsUpdate = true;
 }
 function setLegs(mat, legs) {
+  // seen from the north, the photo's left half is east, where the aft (-Z) leg is
   const mid = (legs[2].c + legs[3].c) / 2;
-  mat.uniforms.legC.value.set(legs[0].c, mid, legs[1].c);
-  mat.uniforms.legBroken.value.set(legs[0].broken ? 1 : 0, legs[1].broken ? 1 : 0);
+  mat.uniforms.legC.value.set(legs[1].c, mid, legs[0].c);
+  mat.uniforms.legBroken.value.set(legs[1].broken ? 1 : 0, legs[0].broken ? 1 : 0);
 }
 
 // The ascent stage on its own: the pixels of the full photo that the descent-only photo lacks.

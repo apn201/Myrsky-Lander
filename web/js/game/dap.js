@@ -94,11 +94,17 @@ export function dapUpdate(d, s, inp, dt) {
   let throttle = 0;
   if (s.stage === 'full') {
     if (d.mode === 'P66') {
-      if (d.rod === null) d.rod = s.vel[1];
+      // the computer's own estimate of the descent rate (wrong when the landing radar has failed)
+      const vyEst = s.vel[1] + (s.nav?.vErr || 0);
+      if (d.rod === null) d.rod = vyEst;
       d.rod += (inp.rodClicks || 0) * ROD_CLICK;
-      const up = qrot(s.q, [1, 0, 0])[1];
-      const a = (d.rod - s.vel[1]) / TAUROD + MOON_G;
-      throttle = Math.min(DPS.maxThrottleFrac, Math.max(DPS.minFrac, m * a / Math.max(0.5, up) / DPS.fRated));
+      if (s.restarting) throttle = d.lastThrottle ?? s.throttle;    // program alarm restart: guidance skipped, throttle held
+      else {
+        const up = qrot(s.q, [1, 0, 0])[1];
+        const a = (d.rod - vyEst) / TAUROD + MOON_G;
+        throttle = Math.min(DPS.maxThrottleFrac, Math.max(DPS.minFrac, m * a / Math.max(0.5, up) / DPS.fRated));
+      }
+      d.lastThrottle = throttle;
     } else {
       throttle = DPS.minFrac + Math.max(0, Math.min(1, inp.throttle)) * 0.6;   // top of travel = FTP
     }

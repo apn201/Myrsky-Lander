@@ -1,4 +1,5 @@
 // Ground: LROC NAC height model (2 m) near the site, SLDEM2015 (59 m) out to the horizon.
+// Myrsky-Lander changes (20 Nov 2026): far-field visual relief and albedo outside the 2 m model; detail kept to game camera distances.
 // World axes: x = east, y = up, z = -north. Metres. Origin = Apollo 12 lander (Intrepid).
 // Code written with an AI assistant (Claude Code, Anthropic), Nov 2026.
 import * as THREE from 'three';
@@ -182,8 +183,12 @@ float albedoAt(vec2 en){
   float edge = smoothstep(0.0, 0.03, min(min(un.x, 1.0-un.x), min(un.y, 1.0-un.y)));
   float a = mix(aw, an, inNear * edge);
   float inW = step(0.0, uw.x) * step(uw.x, 1.0) * step(0.0, uw.y) * step(uw.y, 1.0);
-  return mix(0.52, a, inW);
-}`)
+  float farA = 0.52 * (1.0 + 0.30 * (fbm(en * 0.0035 + 3.0) - 0.47) + 0.16 * (fbm(en * 0.021 + 9.0) - 0.47));
+  return mix(farA, a, inW);
+}
+// visual-only relief outside the 2 m height model (never landed on): craters at 25-300 m and lumps,
+// so the distance reads as lunar ground instead of the smooth 59 m SLDEM mesh
+float farH(vec2 p){ return 2.2 * craters(p, 300.0, 0.3) + 1.2 * craters(p + 77.0, 90.0, 0.25) + 0.6 * craters(p + 31.0, 28.0, 0.22) + 6.0 * fbm(p * 0.004); }`)
       .replace('#include <map_fragment>', `
   // the coarse horizon mesh steps aside where the 2 m data exists (its chords would poke through crater bowls)
   if (wideCut > 0.5 && abs(vEN.x - GC.x) < 1016.0 && abs(vEN.y - GC.y) < 1016.0) discard;
@@ -192,9 +197,12 @@ float albedoAt(vec2 en){
   if (detailOn > 0.5) {
     // real regolith grain from crew photo AS12-49-7284 at two scales, fading out with distance
     float near = 1.0 - smoothstep(4.0, 70.0, camD);
-    float mid = 1.0 - smoothstep(30.0, 320.0, camD);
+    float mid = 1.0 - smoothstep(40.0, 900.0, camD);
     float r1 = 1.0 + 1.35 * 0.5 * (rego(vEN / 0.7) + rego(mat2(0.36, 0.93, -0.93, 0.36) * vEN / 0.93 + 0.61));
     float r2 = 1.0 + 0.7 * rego(mat2(0.8, -0.6, 0.6, 0.8) * vEN / 3.3 + 0.37);
+    // larger-scale patchiness in the 2 m area too, kept out to a game camera's distance
+    float big = 1.0 + 0.12 * (fbm(vEN * 0.035 + 1.7) - 0.47);
+    alb *= mix(1.0, big, 1.0 - smoothstep(600.0, 4000.0, camD));
     // slow patchy brightness so the mid distance does not read as one even carpet
     float patchy = 1.0 + 0.10 * (fbm(vEN * 0.11 + 7.0) - 0.47);
     alb *= mix(1.0, r1, near * 0.85) * mix(1.0, r2, mid * 0.45) * mix(1.0, patchy, mid);
@@ -243,9 +251,18 @@ float albedoAt(vec2 en){
       vec3 mixed = normalize(nW + (bumpW - vec3(0.0, 1.0, 0.0)) * nearN);
       normal = normalize((viewMatrix * vec4(mixed, 0.0)).xyz);
     }
+    float outside = smoothstep(1000.0, 1040.0, max(abs(vEN.x - GC.x), abs(vEN.y - GC.y)));
+    if (outside > 0.0) {
+      float ep = 3.0;
+      float fx = farH(vEN + vec2(ep, 0.0)) - farH(vEN - vec2(ep, 0.0));
+      float fy = farH(vEN + vec2(0.0, ep)) - farH(vEN - vec2(0.0, ep));
+      vec3 bumpF = normalize(vec3(-fx / (2.0 * ep), 1.0, fy / (2.0 * ep)));
+      vec3 nW2 = normalize((vec4(normal, 0.0) * viewMatrix).xyz);
+      normal = normalize((viewMatrix * vec4(normalize(nW2 + (bumpF - vec3(0.0, 1.0, 0.0)) * outside), 0.0)).xyz);
+    }
   }`);
   };
-  mat.customProgramCacheKey = () => 'terrain-v12' + (wideCut ? 'w' : '');
+  mat.customProgramCacheKey = () => 'terrain-v12g' + (wideCut ? 'w' : '');
   return mat;
 }
 

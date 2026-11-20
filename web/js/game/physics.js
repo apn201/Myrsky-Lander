@@ -51,8 +51,12 @@ export function newState(opts = {}) {
     gNow: 0, gPeak: 0,
     settle: 0,
     report: null,
-    descentPose: null,          // where the descent stage was left at liftoff
+    descentPose: null,          // where the descent stage was left at liftoff (or falls, after an abort)
     cg: null,
+    // failures a scenario can switch on
+    fail: { stuckJet: null, throttleStuck: null },
+    isolated: new Set(),        // RCS quads the crew has isolated (A-D)
+    nav: { hErr: 0, vErr: 0 },  // navigation error (landing radar failure): estimate minus truth
     ...opts,
   };
   // start with the footpads at the requested height (default 300 m)
@@ -144,6 +148,7 @@ export function step(s, ctl, dt, world = FLAT) {
   if (s.stage === 'full') {
     let want = ctl.throttle > 0 ? Math.max(DPS.minFrac, ctl.throttle) : 0;
     if (want > DPS.maxThrottleFrac) want = DPS.fFTP / DPS.fRated;      // past 65 %: full throttle position
+    if (s.fail.throttleStuck != null && want > 0) want = s.fail.throttleStuck;
     if (s.engStop || s.dpsFuel <= 0 || s.dpsFailed) want = 0;
     s.throttle += (want - s.throttle) * Math.min(1, dt / DPS.lag);
     if (s.throttle < 0.01 && want === 0) s.throttle = 0;
@@ -170,7 +175,7 @@ export function step(s, ctl, dt, world = FLAT) {
   // reaction control jets
   const flow = RCS.thrust / (RCS.isp * G0);
   for (const j of JETS) {
-    const on = !!ctl.jets?.[j.n] && !s.failedJets.has(j.n) && s.rcsFuel > 0;
+    const on = (!!ctl.jets?.[j.n] || s.fail.stuckJet === j.n) && !s.failedJets.has(j.n) && !s.isolated.has(j.quad) && s.rcsFuel > 0;
     s.jetsOn[j.n] = on;
     if (on) { bodyForce(scale(j.dir, RCS.thrust), j.pos); s.rcsFuel = Math.max(0, s.rcsFuel - flow * dt); }
   }
@@ -258,6 +263,7 @@ export function step(s, ctl, dt, world = FLAT) {
   s.w = addScaled(s.w, wdot, dt);
   s.q = qintegrate(s.q, s.w, dt);
   s.t += dt;
+  if (s.descentPose?.vel) fallDescent(s, dt, world);
 
   phaseLogic(s, grounded, m, world, dt);
   return s;
@@ -348,16 +354,48 @@ export function report(s, world = FLAT) {
 // ---------- liftoff ----------
 export function liftoff(s) {
   if (s.phase !== 'down' || !s.report?.canLift) return false;
+  return stage(s, false);
+}
+
+// ABORT STAGE in flight: the descent stage is cut loose and falls, the ascent engine fires at once.
+export function abortStage(s) {
+  if (s.stage !== 'full' || s.crewLost || !(s.phase === 'flying' || s.phase === 'down')) return false;
+  if (s.phase === 'down') return liftoff(s);
+  return stage(s, true);
+}
+
+function stage(s, inFlight) {
   const origin = sub(s.pos, qrot(s.q, s.cg));          // body origin in the world
-  s.descentPose = { origin, q: s.q.slice(), legs: s.legs.map(l => ({ ...l })) };
+  const vOrigin = s.vel.slice();
+  s.descentPose = { origin, q: s.q.slice(), legs: s.legs.map(l => ({ ...l })), vel: inFlight ? vOrigin : null };
   s.stage = 'ascent';
   const cgA = massProps(s).cg;
   s.cg = cgA;
   s.pos = add(origin, qrot(s.q, cgA));
-  s.vel = [0, 0, 0]; s.w = [0, 0, 0];
+  if (!inFlight) { s.vel = [0, 0, 0]; s.w = [0, 0, 0]; }
   s.apsOn = true; s.throttle = 0;
   s.phase = 'ascent'; s.settle = 0; s.report = null;
   s.touching = new Set();
-  log(s, 0, 'ABORT STAGE / ASCENT ENGINE ON');
+  log(s, inFlight ? 2 : 0, inFlight ? 'ABORT STAGE: descent stage jettisoned, ascent engine on' : 'ABORT STAGE / ASCENT ENGINE ON');
   return true;
+}
+
+// the jettisoned descent stage: ballistic until its footpads (or its body) reach the ground
+function fallDescent(s, dt, world) {
+  const d = s.descentPose;
+  d.vel[1] -= MOON_G * dt;
+  d.origin = addScaled(d.origin, d.vel, dt);
+  let low = Infinity;
+  for (const leg of LEGS) {
+    const p = add(d.origin, qrot(d.q, padJointBody(leg, { c: 0 })));
+    low = Math.min(low, p[1] - GEAR.padDrop - world.height(p[0], p[2]));
+  }
+  if (low <= 0) {
+    const v = -d.vel[1];
+    d.origin[1] -= low;
+    d.vel = null;
+    log(s, 0, `DESCENT STAGE HIT THE GROUND AT ${v.toFixed(1)} m/s`);
+    if (v > 4) d.legs.forEach(l => { l.c = GEAR.stroke; l.bottomed = true; });
+    else d.legs.forEach(l => { l.c = Math.min(GEAR.stroke, v * 0.12); });
+  }
 }

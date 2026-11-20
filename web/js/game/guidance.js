@@ -2,7 +2,8 @@
 // A reference descent (rate of descent falling with height, horizontal speed that brings you to the
 // target and dies away near the ground) is turned into two needle errors, like the error needles on an
 // attitude indicator:
-//   leanErr  how much more to lean toward +x (east). Press the arrow toward the dot.
+//   leanErr  how much more to lean toward +x (east, screen left seen from the north). The HUD shows it
+//            mirrored so the dot sits on the side of the arrow to press.
 //   vertErr  P66: how many ft/s of ROD clicks are missing (+ = click up); manual: throttle missing.
 // Advisories say when the P66 throttle limit cannot stop you in time and manual full throttle can.
 //
@@ -18,16 +19,19 @@ const VTD = 0.6;                 // aimed touchdown rate, m/s
 
 const FLAT = { height: () => 0 };
 export function guidance(s, dap, world = FLAT) {
-  const h = Math.max(0, padHeight(s, world));
+  // what the computer believes (the landing radar keeps it honest; without it the estimate drifts)
+  const h = Math.max(0, padHeight(s, world) + (s.nav?.hErr || 0));
   const { m } = massProps(s);
   const up = qrot(s.q, [1, 0, 0]);
   const lean = Math.asin(clamp(up[0], -1, 1));          // + = leaning toward +x
   const cos = Math.max(0.3, up[1]);
-  const vy = s.vel[1], vx = s.vel[0];
+  const vy = s.vel[1] + (s.nav?.vErr || 0), vx = s.vel[0];
+  const tgtX = s.target ?? TARGET[0];
   const surf = surface(world, s.pos[0], s.pos[2]);
   // aim point: the target, or the nearest clear ground when the target is out of reach down low
-  let aimX = TARGET[0];
-  if (padHeight(s, world) < 60 && Math.abs(TARGET[0] - s.pos[0]) > 120) {
+  let aimX = tgtX;
+  const targetBad = s.target != null && !surface(world, tgtX, s.pos[2]).ok && padHeight(s, world) < 120;
+  if (padHeight(s, world) < 60 && Math.abs(tgtX - s.pos[0]) > 120 || targetBad) {
     // pick once, from where the lander can stop (about 1 m/s² of braking), and keep it while it stays clear
     if (!s.aim || !surface(world, s.aim.x, s.pos[2]).ok) {
       const stopX = s.pos[0] + s.vel[0] * Math.abs(s.vel[0]) / 2;
@@ -50,7 +54,7 @@ export function guidance(s, dap, world = FLAT) {
   // turning, so letting go of the key when it is centred does not overshoot
   const wW = qrot(s.q, s.w);
   const leanRate = -wW[2] / Math.max(0.3, Math.cos(lean));
-  const leanErr = leanWant - lean - 0.9 * leanRate;
+  const leanErr = (s.stage === 'ascent' ? 0 : leanWant) - lean - 0.9 * leanRate;   // ascent: stay upright
 
   // vertical: what the engine has to do to reach the aimed touchdown rate at the ground
   const brake = vy < -VTD ? (vy * vy - VTD * VTD) / (2 * Math.max(0.3, h - 0.3)) : 0;
@@ -77,13 +81,25 @@ export function guidance(s, dap, world = FLAT) {
     } else if (manual && fNeed < fP66 * 0.8 && vy > wantVy - 1) say(1, 'P66 CAN TAKE OVER AGAIN (M)');
     if (h < 12 && Math.abs(lean) > 7 * DEG) say(2, 'LEVEL THE LANDER');
     if (h < 40 && Math.abs(vx - wantVx) > 2) say(1, `TOO FAST ${vx - wantVx > 0 ? 'EAST' : 'WEST'}WARD — FOLLOW THE DOT`);
-    if (h < 60 && Math.abs(TARGET[0] - s.pos[0]) > 120) say(1, 'TARGET OUT OF REACH — FLY TO CLEAR GROUND');
+    if (h < 60 && Math.abs(tgtX - s.pos[0]) > 120) say(1, 'TARGET OUT OF REACH — FLY TO CLEAR GROUND');
+    if (targetBad && h > 25) say(1, 'TARGET IS IN BOULDERS — FLY ON TO CLEAR GROUND');
+    // failures
+    const quadOf = n => ['A', 'A', 'A', 'A', 'B', 'B', 'B', 'B', 'C', 'C', 'C', 'C', 'D', 'D', 'D', 'D'][n - 1];
+    if (s.fail.stuckJet && !s.isolated.has(quadOf(s.fail.stuckJet))) {
+      const q = quadOf(s.fail.stuckJet);
+      say(3, `JET ${s.fail.stuckJet} STUCK ON — ISOLATE QUAD ${q} (KEY ${'ABCD'.indexOf(q) + 1})`);
+    }
+    if (s.dpsFailed) say(4, h > 8 ? 'DESCENT ENGINE OUT — ABORT STAGE NOW (ENTER)' : 'DESCENT ENGINE OUT — BRACE');
+    if (s.fail.throttleStuck != null && !s.dpsFailed) say(3, `THROTTLE STUCK ${(s.fail.throttleStuck * 100).toFixed(0)}% — ABORT STAGE (ENTER) OR LAND HARD`);
+    if (s.radarOut) say(1, 'NO LANDING RADAR — ALTITUDE AND RATE ARE ESTIMATES');
+    if (s.alarm && !s.alarm.acked) say(2, `PROGRAM ALARM ${s.alarm.code} — ACKNOWLEDGE (A)`);
     if (h < 70 && h > 1 && !surf.ok) {
       const spot = clearSpot(world, s.pos[0], s.pos[2]);
-      const where = spot === null ? 'NO CLEAR GROUND NEARBY' : `CLEAR ${Math.abs(spot - s.pos[0]).toFixed(0)} m ${spot > s.pos[0] ? 'EAST ▶' : '◀ WEST'}`;
+      const where = spot === null ? 'NO CLEAR GROUND NEARBY' : `CLEAR ${Math.abs(spot - s.pos[0]).toFixed(0)} m ${spot > s.pos[0] ? '◀ EAST' : 'WEST ▶'}`;
       say(h < 25 ? 2 : 1, `${surf.rock > 0.35 ? `BOULDERS ${surf.rock.toFixed(1)} m` : `SLOPE ${surf.slope.toFixed(0)}°`} BELOW — ${where}`);
     }
   }
+  if (s.stage === 'ascent' && s.phase === 'ascent') say(2, Math.abs(lean) > 15 * DEG ? 'ASCENT: GET UPRIGHT — FOLLOW THE DOT' : 'ASCENT ENGINE ON — CLIMB, KEEP UPRIGHT');
   return { h, lean, leanWant, leanErr, wantVy, wantVx, vertErr, adv, dx, surf, aimX };
 }
 
