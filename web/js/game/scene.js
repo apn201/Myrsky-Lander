@@ -248,7 +248,7 @@ export async function createScene(canvas) {
     },
     cycleZoom() { zoom = (zoom + 1) % ZOOMS.length; },
     toggleCamera() { camMode = camMode === 'chase' ? 'window' : 'chase'; return camMode; },
-    toggleFilm() { post.uniforms.film.value = post.uniforms.film.value > 0.5 ? 0 : 1; return post.uniforms.film.value; },
+    toggleFilm() { return post.cycleLook(); },
     snapCamera() { first = true; },
   };
 }

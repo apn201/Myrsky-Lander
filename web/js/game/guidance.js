@@ -31,7 +31,11 @@ export function guidance(s, dap, world = FLAT) {
   // aim point: the target, or the nearest clear ground when the target is out of reach down low
   let aimX = tgtX;
   const targetBad = s.target != null && !surface(world, tgtX, s.pos[2]).ok && padHeight(s, world) < 120;
-  if (padHeight(s, world) < 60 && Math.abs(tgtX - s.pos[0]) > 120 || targetBad) {
+  // down low over bad ground (slope or boulders) a pilot moves to clear ground, target or not
+  const hTrue = padHeight(s, world);
+  const badBelow = hTrue < 50 && hTrue > 3 && !surf.ok && !surface(world, tgtX, s.pos[2]).ok;
+  const nearBad = hTrue < 50 && hTrue > 3 && !surf.ok && Math.abs(tgtX - s.pos[0]) > 25;
+  if (hTrue < 60 && Math.abs(tgtX - s.pos[0]) > 120 || targetBad || badBelow || nearBad) {
     // pick once, from where the lander can stop (about 1 m/s² of braking), and keep it while it stays clear
     if (!s.aim || !surface(world, s.aim.x, s.pos[2]).ok) {
       const stopX = s.pos[0] + s.vel[0] * Math.abs(s.vel[0]) / 2;
@@ -54,12 +58,14 @@ export function guidance(s, dap, world = FLAT) {
   // turning, so letting go of the key when it is centred does not overshoot
   const wW = qrot(s.q, s.w);
   const leanRate = -wW[2] / Math.max(0.3, Math.cos(lean));
-  const leanErr = (s.stage === 'ascent' ? 0 : leanWant) - lean - 0.9 * leanRate;   // ascent: stay upright
 
   // vertical: what the engine has to do to reach the aimed touchdown rate at the ground
   const brake = vy < -VTD ? (vy * vy - VTD * VTD) / (2 * Math.max(0.3, h - 0.3)) : 0;
   const fNeed = m * (MOON_G + brake) / cos;
   const fP66 = DPS.maxThrottleFrac * DPS.fRated, fFTP = DPS.fFTP;
+  // vertical emergency: every newton is needed for braking, so the dot asks for upright
+  const emergency = s.stage === 'full' && fNeed > fP66 * 0.9 && vy < -(VTD + 1.0);
+  const leanErr = (s.stage === 'ascent' || emergency ? 0 : leanWant) - lean - 0.9 * leanRate;
   const manual = dap.mode !== 'P66';
   const thrWant = clamp(m * (MOON_G + (wantVy - vy) / 1.5) / cos / DPS.fRated, 0, 1);
   const vertErr = manual
@@ -71,7 +77,7 @@ export function guidance(s, dap, world = FLAT) {
   if (s.stage === 'full' && s.phase === 'flying') {
     if (s.contactLight && !s.engStop) say(2, 'CONTACT — ENGINE STOP (SPACE)');
     else if (s.dpsFuel <= 0) say(3, 'NO DESCENT PROPELLANT — LEVEL THE LANDER');
-    else if (fNeed > fP66 && h > 0.5) {
+    else if (fNeed > fP66 && h > 2 && vy < -(VTD + 1.0)) {
       if (fNeed <= fFTP * 0.97) say(manual ? 2 : 3, manual ? 'FULL THROTTLE (↑)' : 'P66 CANNOT STOP YOU — MANUAL THROTTLE: M, THEN FULL ↑');
       else {
         const a = fFTP * cos / m - MOON_G;

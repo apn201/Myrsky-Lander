@@ -161,7 +161,7 @@ function keyboardPilot(start, world) {
   const { s } = keyboardPilot({}, undefined);
   check('keyboard pilot following the flight director lands', s.phase === 'down' && s.report.worst <= 1,
     `${s.report?.verdict} t=${s.t.toFixed(0)} s, ${Math.hypot(s.pos[0], s.pos[2]).toFixed(0)} m from target, fuel ${s.dpsFuel.toFixed(0)} kg ${sevs(s)}`);
-  const fast = keyboardPilot({ alt: 120, vel: [-8, -14, 0] }, undefined);
+  const fast = keyboardPilot({ alt: 60, vel: [-6, -18, 0] }, undefined);   // beyond what P66's 65 % limit can stop
   check('too fast for P66: advisory, manual throttle, survives', fast.advSeen.has('P66') && fast.s.phase === 'down' && !fast.s.crewLost,
     `${fast.s.report?.verdict}, advisories: ${[...fast.advSeen].join(', ')} ${sevs(fast.s)}`);
 }

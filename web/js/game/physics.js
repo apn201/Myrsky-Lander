@@ -63,6 +63,12 @@ export function newState(opts = {}) {
   const h = opts.alt ?? 300;
   s.cg = massProps(s).cg;
   s.pos[1] += h - padHeight(s);
+  // the descent engine has been firing for ten minutes: its trim gimbal already points the thrust
+  // through the centre of mass (an untrimmed engine at full throttle out-torques the RCS)
+  if (!opts.gimbal) {
+    const d = sub(s.cg, DPS.pivot);
+    s.gimbal = [-Math.atan2(d[2], d[0]), Math.atan2(d[1], d[0])];
+  }
   return s;
 }
 
