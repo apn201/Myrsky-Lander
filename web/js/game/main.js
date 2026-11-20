@@ -235,6 +235,8 @@ function callouts(s, g) {
   if (secs < 30 && !calls.f30) { calls.f30 = true; sound.cue('s30'); }
   if (s.contactLight && !calls.contact) { calls.contact = true; sound.cue('contact'); }
   if (s.radarOut && !calls.av) { calls.av = true; sound.cue('altvel'); }
+  // program alarm: the crew's words as in the Apollo 11 transcript (no recording of this exchange yet)
+  if (s.alarmCall) { const c = s.alarmCall; s.alarmCall = null; sound.say(calls.firstAlarm ? `${c} alarm.` : `Program alarm. It's a ${c}.`); calls.firstAlarm = true; }
   if (lastDust > 0.25 && !calls.dust && s.phase === 'flying') { calls.dust = true; sound.cue('dust'); }
   if (s.firstTouch && !calls.td) { calls.td = true; sound.thud(s.firstTouch.vVert); }
   const hard = s.events.length && s.events[s.events.length - 1];

@@ -20,6 +20,7 @@ function alarms(fromH, toH) {
       s.alarm = { code, t: s.t, acked: false };
       s.restartUntil = s.t + 0.8 + s.rand() * 0.8;
       log(s, 1, `PROGRAM ALARM ${code} (executive overflow): computer restart`);
+      s.alarmCall = code;      // the crew's call, shown as a subtitle with radio static
     },
   };
 }

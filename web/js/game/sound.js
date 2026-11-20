@@ -1,4 +1,5 @@
-// Sound, all synthesized (no recordings): what the crew heard inside the cabin, not outside (vacuum).
+// Sound: what the crew heard inside the cabin, not outside (vacuum). Synthesized except the Apollo 11 tape.
+//   cabin:   fans and glycol pumps (crews described the LM cabin as noisy)
 //   engine:  low rumble through the structure, louder with thrust
 //   RCS:     sharp bangs when jets fire (crews said they were loud)
 //   alarm:   master alarm tone until acknowledged
@@ -10,7 +11,7 @@
 // Code written with an AI assistant (Claude Code, Anthropic), 20 Nov 2026.
 
 export function createSound() {
-  let ctx = null, master, engineGain, apsGain, alarmGain, alarmOsc, on = true;
+  let ctx = null, master, engineGain, engineLP, engineSub, apsGain, alarmGain, alarmOsc, on = true;
   const lastJets = new Array(17).fill(false);
   let lastPop = 0;
 
@@ -26,10 +27,20 @@ export function createSound() {
       const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
       const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = freq;
       const g = ctx.createGain(); g.gain.value = 0;
-      src.connect(lp); lp.connect(g); g.connect(master); src.start();
+      src.connect(lp); lp.connect(g); g.connect(master); src.start(Math.random() * 1.5);
+      g.lp = lp;
       return g;
     };
-    engineGain = mk(160); apsGain = mk(260);
+    engineGain = mk(160); apsGain = mk(260); engineLP = engineGain.lp;
+    // the descent engine's low structural rumble: a 34 Hz tone wobbling under the noise
+    engineSub = ctx.createGain(); engineSub.gain.value = 0;
+    const sub = ctx.createOscillator(); sub.frequency.value = 34;
+    const wob = ctx.createOscillator(), wobG = ctx.createGain(); wob.frequency.value = 3.1; wobG.gain.value = 5;
+    wob.connect(wobG); wobG.connect(sub.frequency); sub.connect(engineSub); engineSub.connect(master); sub.start(); wob.start();
+    // cabin ambience: fan hiss and the glycol pump's hum, always on
+    const cabin = mk(700); cabin.gain.value = 0.05;
+    const hum = ctx.createOscillator(), humG = ctx.createGain(); hum.frequency.value = 380; humG.gain.value = 0.006;
+    hum.connect(humG); humG.connect(master); hum.start();
     alarmOsc = ctx.createOscillator(); alarmOsc.type = 'square'; alarmOsc.frequency.value = 750;
     alarmGain = ctx.createGain(); alarmGain.gain.value = 0;
     const alp = ctx.createBiquadFilter(); alp.type = 'lowpass'; alp.frequency.value = 2400;
@@ -99,13 +110,19 @@ export function createSound() {
       if (!ctx) return;
       const t = ctx.currentTime;
       const dps = s.stage === 'full' ? s.throttle : 0;
-      engineGain.gain.setTargetAtTime(on ? 0.25 + dps * 0.9 : 0, t, 0.08);
-      if (dps === 0) engineGain.gain.setTargetAtTime(0, t, 0.08);
+      engineGain.gain.setTargetAtTime(on && dps > 0 ? 0.25 + dps * 0.9 : 0, t, 0.08);
+      engineLP.frequency.setTargetAtTime(110 + dps * 260, t, 0.1);          // heavier and brighter with thrust
+      engineSub.gain.setTargetAtTime(on && dps > 0 ? 0.05 + dps * 0.18 : 0, t, 0.08);
       apsGain.gain.setTargetAtTime(on && s.stage === 'ascent' && s.apsOn && s.apsFuel > 0 ? 0.7 : 0, t, 0.08);
       // RCS: a bang for each jet that just came on (at most one every 25 ms)
       let fresh = 0;
       for (let n = 1; n <= 16; n++) { if (s.jetsOn[n] && !lastJets[n]) fresh++; lastJets[n] = s.jetsOn[n]; }
-      if (fresh && performance.now() - lastPop > 25) { burst(1100, 1.2, 0.05, 0.25 + 0.1 * Math.min(4, fresh)); lastPop = performance.now(); }
+      // RCS: a low structural thump and a sharp crack (crews heard the jets as loud bangs)
+      if (fresh && performance.now() - lastPop > 25) {
+        const v = 0.25 + 0.1 * Math.min(4, fresh);
+        burst(170, 1.0, 0.09, v * 1.6); burst(1300, 1.4, 0.035, v);
+        lastPop = performance.now();
+      }
       // master alarm: two-tone warble while lit
       alarmGain.gain.setTargetAtTime(on && alarmLit ? 0.07 : 0, t, 0.02);
       if (alarmLit) alarmOsc.frequency.setValueAtTime(Math.floor(t * 2.5) % 2 ? 750 : 1000, t);

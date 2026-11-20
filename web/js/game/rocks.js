@@ -96,9 +96,12 @@ vec4 rw = modelMatrix * instanceMatrix * vec4(transformed, 1.0); vRW = rw.xyz; v
       .replace('#include <map_fragment>', `#include <map_fragment>
       vec3 bw = pow(abs(vRN), vec3(4.0)); bw /= bw.x + bw.y + bw.z;
       float gr = texture2D(tGrain, vRW.zy / 0.45).r * bw.x + texture2D(tGrain, vRW.xz / 0.45).r * bw.y + texture2D(tGrain, vRW.xy / 0.45).r * bw.z;
-      diffuseColor.rgb *= 1.0 + 1.1 * (gr * 1.99 - 1.0);`);
+      diffuseColor.rgb *= 1.0 + 1.1 * (gr * 1.99 - 1.0);
+      // far away a boulder is only a dark speck: fade rocks out with distance (dithered, no sorting)
+      float rd = distance(vRW, cameraPosition);
+      if (fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.233))) * 43758.5453) < smoothstep(110.0, 170.0, rd)) discard;`);
   };
-  mat.customProgramCacheKey = () => 'game-rock-v1';
+  mat.customProgramCacheKey = () => 'game-rock-v2';
   decorate(mat);
   const group = new THREE.Group();
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p3 = new THREE.Vector3();

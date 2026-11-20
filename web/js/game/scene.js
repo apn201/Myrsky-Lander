@@ -274,11 +274,21 @@ function squashableLegs(mat) {
           if ((xm < 0.0 ? legBroken.x : legBroken.y) > 0.5 && abs(xm) > 2.15) discard;
         }
         vec4 t = texture2D(map, uvS);
-        // the cut-out is evenly lit: shade it for the low Sun in the east (screen and image left)
-        float sunSide = mix(1.18, 0.58, smoothstep(-0.9, 0.9, xm / 4.7));
-        float under = ym < STAGE ? 0.82 : 1.0;
-        float photoShade = sunSide * under;`)
-    .replace('gl_FragColor = vec4(c * bright * L, 1.0);', 'gl_FragColor = vec4(c * bright * L * photoShade, 1.0);');
+        // the cut-out is evenly lit (studio fill): shade it for the low Sun in the east (screen and image
+        // left); the far side falls toward the near-black of lunar shadow
+        float sunSide = mix(1.25, 0.32, smoothstep(-0.8, 0.85, xm / 4.7));
+        float under = mix(0.62, 1.0, smoothstep(STAGE - 0.4, STAGE + 0.6, ym));
+        float photoShade = sunSide * under;
+        float edgeA = smoothstep(0.38, 0.85, t.a);               // feathered edge (above the mipmap alpha halo)`)
+    .replace('if (t.a < 0.45) discard;', 'if (t.a < 0.38) discard;')
+    .replace('gl_FragColor = vec4(c * bright * L, 1.0);', `
+        // grade the studio photo toward the scene: deeper shadows, a little less colour
+        c = pow(max(c, 0.0), vec3(1.2)) * 1.15;
+        c = mix(vec3(dot(c, vec3(0.3, 0.59, 0.11))), c, 0.82);
+        vec3 col = c * bright * L * photoShade;
+        col += vec3(0.62, 0.6, 0.57) * 0.035 * bright * (1.0 - smoothstep(0.0, STAGE + 0.8, ym));   // regolith bounce from below
+        gl_FragColor = vec4(col, edgeA);`);
+  mat.transparent = true;
   mat.needsUpdate = true;
 }
 function setLegs(mat, legs) {
