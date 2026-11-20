@@ -279,7 +279,9 @@ function squashableLegs(mat) {
         float sunSide = mix(1.25, 0.32, smoothstep(-0.8, 0.85, xm / 4.7));
         float under = mix(0.62, 1.0, smoothstep(STAGE - 0.4, STAGE + 0.6, ym));
         float photoShade = sunSide * under;
-        float edgeA = smoothstep(0.38, 0.85, t.a);               // feathered edge (above the mipmap alpha halo)`)
+        // feathered edge, above the mipmap alpha halo (the discard follows on its own line)
+        float edgeA = smoothstep(0.38, 0.85, t.a);
+        `)
     .replace('if (t.a < 0.45) discard;', 'if (t.a < 0.38) discard;')
     .replace('gl_FragColor = vec4(c * bright * L, 1.0);', `
         // grade the studio photo toward the scene: deeper shadows, a little less colour
