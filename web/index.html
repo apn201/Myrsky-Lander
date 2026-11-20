@@ -62,7 +62,7 @@
   #master.on { color: #fff; background: #d2281a; border-color: #ff6a4d; animation: blink .5s steps(2) infinite; }
   #prog { position: fixed; top: calc(max(12px, env(safe-area-inset-top)) + 34px); left: 50%; transform: translateX(-50%); font: 13px ui-monospace, monospace; color: #ffcf5a; text-shadow: 0 0 4px #000; }
   #scn { position: fixed; bottom: max(16px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); font: 11px ui-monospace, monospace; color: var(--dim); pointer-events: none; white-space: nowrap; }
-  #menu { position: fixed; inset: 0; background: rgba(0,0,0,.88); display: grid; place-items: center; overflow: auto; }
+  #menu { position: fixed; inset: 0; z-index: 10; background: rgba(0,0,0,.88); display: grid; place-items: center; overflow: auto; }
   #menu[hidden] { display: none; }
   #menu > div { max-width: min(92vw, 640px); padding: 16px; font: 13px/1.45 ui-monospace, monospace; color: var(--hud); }
   #menu h1 { font-size: 22px; letter-spacing: .1em; margin: 0 0 4px; } #menu p { margin: 0 0 14px; opacity: .75; }
@@ -72,7 +72,12 @@
   #loading { position: fixed; inset: 0; display: grid; place-items: center; font: 14px ui-monospace, monospace; color: var(--hud); }
   #thr-bar { position: fixed; left: 16px; bottom: max(16px, env(safe-area-inset-bottom)); width: 10px; height: 26vh; border: 1px solid var(--dim); pointer-events: none; }
   #thr-cmd { position: absolute; bottom: 0; left: 0; right: 0; background: var(--hud); opacity: .7; }
-  #help { bottom: max(16px, env(safe-area-inset-bottom)); left: 40px; color: var(--dim); max-width: 50vw; }
+  #fuel-bar { position: fixed; left: 32px; bottom: max(16px, env(safe-area-inset-bottom)); width: 10px; height: 26vh; border: 1px solid var(--dim); pointer-events: none; }
+  #fuel-lvl { position: absolute; bottom: 0; left: 0; right: 0; background: var(--hud); opacity: .8; }
+  #fuel-bar.amber { border-color: var(--warn); } #fuel-bar.amber #fuel-lvl { background: var(--warn); }
+  #fuel-bar.red { border-color: var(--bad); animation: blink .6s steps(2) infinite; } #fuel-bar.red #fuel-lvl { background: var(--bad); }
+  .barlbl { position: absolute; top: -16px; left: -4px; font: 10px ui-monospace, monospace; color: var(--dim); }
+  #help { bottom: max(16px, env(safe-area-inset-bottom)); left: 56px; color: var(--dim); max-width: 50vw; }
   #msg { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,.55); }
   #msg[hidden] { display: none; }
   #msg > div { font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; color: var(--hud); max-width: min(92vw, 620px); padding: 0 16px; }
@@ -101,6 +106,7 @@
   <span>THR</span><b id="thr">0</b><span>%</span>
   <span>MODE</span><b id="mode"></b><span></span>
   <span id="dps-l">DPS</span><b id="dps">0</b><span>kg</span>
+  <span>HOVER</span><b id="hover">0</b><span>s</span>
   <span>RCS</span><b id="rcs">0</b><span>kg</span>
   <span>RANGE</span><b id="dist">0</b><span>m</span>
   <span>BELOW</span><b id="surf"></b><span></span>
@@ -136,7 +142,8 @@
 </div></div>
 <div id="loading">loading the Apollo 12 landing site…</div>
 <div id="log" class="hud"></div>
-<div id="thr-bar"><div id="thr-cmd"></div></div>
+<div id="thr-bar"><span class="barlbl">THR</span><div id="thr-cmd"></div></div>
+<div id="fuel-bar"><span class="barlbl">PROP</span><div id="fuel-lvl"></div></div>
 <div id="help" class="hud">
   <span class="keys">keep the dot in the crosshair: ←→ lean · ↑↓ descent rate (1 ft/s per click) · space engine stop · M manual throttle · A alarm · enter abort · N scenarios</span>
   <span class="touch">keep the dot in the crosshair: slide sideways to lean, up/down for descent rate</span>

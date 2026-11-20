@@ -52,9 +52,10 @@ function toggleMode() {
 }
 function engineStop() { if (s.stage === 'full') { s.engStop = !s.engStop; if (s.engStop && s.contactLight && !calls.es) { calls.es = true; sound.cue('engstop'); } } else if (s.phase === 'ascent') s.apsOn = !s.apsOn; }
 function doLiftoff() { if (abortStage(s) || liftoff(s)) { dap.hold = null; $('msg').hidden = true; shownPhase = s.phase; } }
-function ackAlarm() { s.alarmQuiet = true; s.everAcked = true; if (s.alarm && !s.alarm.acked) { s.alarm.acked = true; if (!calls.go) { calls.go = true; setTimeout(() => sound.say("Roger. We're go on that alarm.", { houston: true }), 1800); } } }
+function ackAlarm() { s.alarmQuiet = true; s.everAcked = true; if (s.alarm && !s.alarm.acked) { s.alarm.acked = true; const first = !calls.go; calls.go = true; setTimeout(() => sound.chat(first ? 'alarm_go' : 'alarm_go_same'), 1500); } }
 function menu() {
   paused = true;
+  $('msg').hidden = true;                // the report must not show through the menu
   $('menu-list').innerHTML = '';
   for (const sc of SCENARIOS) {
     const b = document.createElement('button');
@@ -168,6 +169,13 @@ function hud(s, g, scr) {
   $('contact').classList.toggle('on', s.contactLight);
   $('engstop').classList.toggle('on', s.stage === 'full' && s.engStop);
   const secs = s.dpsFuel / (massProps(s).m * MOON_G / DPS.vex);
+  // propellant gauge: descent propellant (or ascent after staging), hover seconds left
+  const fullFuel = s.stage === 'full' ? (s.fuelStart ?? (s.fuelStart = s.dpsFuel)) : 2353;
+  const left = s.stage === 'full' ? s.dpsFuel : s.apsFuel;
+  $('fuel-lvl').style.height = Math.max(0, Math.min(100, left / fullFuel * 100)) + '%';
+  $('fuel-bar').className = s.stage !== 'full' ? '' : secs < 30 ? 'red' : secs < 60 ? 'amber' : '';
+  $('hover').textContent = s.stage === 'full' ? secs.toFixed(0) : '—';
+  $('hover').className = s.stage === 'full' && secs < 60 ? (secs < 30 ? 'sev3' : 'sev2') : '';
   $('bingo').textContent = s.stage !== 'full' ? '' : s.dpsFuel <= 0 ? '' : secs < 30 ? '30 SECONDS' : secs < 60 ? '60 SECONDS' : '';
 
   // flight director: keep the dot in the middle of the crosshair
@@ -220,32 +228,56 @@ function hud(s, g, scr) {
 
 requestAnimationFrame(frame);
 
-// spoken callouts, Apollo style: height in feet and descent rate, fuel, contact
+// radio: altitude callouts from the player's real numbers, event chatter, real Apollo 11 tape at the end
 let lastThud = 0;
+const RATES = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 8, 10, 15, 20];
+function once(key, fn) { if (!calls[key]) { calls[key] = true; fn(); } }
 function callouts(s, g) {
-  if (s.stage !== 'full') return;
   const ft = g.h * 3.28084, down = -(s.vel[1] + (s.nav.vErr || 0)) * 3.28084;
-  for (const mark of [400, 300, 200, 150, 100, 75, 50, 40, 30, 20, 10]) {
-    if (ft < mark && !calls['h' + mark] && s.phase === 'flying') {
-      calls['h' + mark] = true;
-      const r = Math.max(0, Math.round(down * 2) / 2);
-      sound.say(`${mark} feet, down ${r % 1 ? Math.floor(r) + ' and a half' : r}`);
-      break;
+  if (s.stage === 'full' && s.phase === 'flying') {
+    if (s.t > 2) once('go', () => sound.chat(['go_landing', 'go_landing_ack']));
+    if (s.t > 25 && g.h > 120) once('nice', () => sound.chat(s.rand && s.rand() < 0.5 ? 'looking_good' : 'coming_nicely'));
+    for (const mark of [400, 300, 250, 200, 150, 100, 75, 60, 50, 40, 30, 20, 10]) {
+      if (ft < mark && !calls['h' + mark]) {
+        calls['h' + mark] = true;
+        if (mark > ft + 30) break;                       // passed long ago (start below this mark)
+        const r = RATES.reduce((a, b) => Math.abs(b - down) < Math.abs(a - down) ? b : a);
+        sound.chat(down > 0.25 ? ['h' + mark, 'r' + r] : ['h' + mark]);
+        break;
+      }
     }
+    if (g.h < 9 && g.h > 3) once('shadow', () => sound.chat('shadow'));
+    if (g.adv.some(a => a.text.startsWith('BOULDERS'))) once('rocks', () => sound.chat('lot_of_rocks'));
+    if (s.radarOut) once('av', () => { sound.cue('altvel'); sound.chat('radar_lost'); setTimeout(() => sound.chat('radar_ack'), 2500); });
+    if (s.fail.stuckJet) once('jet', () => { sound.chat('jet_stuck'); setTimeout(() => sound.chat('jet_isolate'), 2500); });
+    if (s.fail.throttleStuck != null) once('thr', () => { sound.chat('throttle_stuck'); setTimeout(() => sound.chat('throttle_ack'), 2500); });
+    if (s.dpsFailed) once('eng', () => sound.chat('engine_out'));
   }
-  const secs = s.dpsFuel / (massProps(s).m * MOON_G / DPS.vex);
-  if (secs < 60 && !calls.f60) { calls.f60 = true; sound.cue('s60'); }
-  if (secs < 30 && !calls.f30) { calls.f30 = true; sound.cue('s30'); }
-  if (s.contactLight && !calls.contact) { calls.contact = true; sound.cue('contact'); }
-  if (s.radarOut && !calls.av) { calls.av = true; sound.cue('altvel'); }
-  // program alarm: the crew's words as in the Apollo 11 transcript (no recording of this exchange yet)
-  if (s.alarmCall) { const c = s.alarmCall; s.alarmCall = null; sound.say(calls.firstAlarm ? `${c} alarm.` : `Program alarm. It's a ${c}.`); calls.firstAlarm = true; }
-  if (lastDust > 0.25 && !calls.dust && s.phase === 'flying') { calls.dust = true; sound.cue('dust'); }
-  if (s.firstTouch && !calls.td) { calls.td = true; sound.thud(s.firstTouch.vVert); }
+  if (s.alarmCall) {
+    const c = s.alarmCall; s.alarmCall = null;
+    sound.chat(!calls.firstAlarm ? 'alarm_1202' : c === '1201' ? 'alarm_1201' : 'alarm_reading');
+    calls.firstAlarm = true;
+  }
+  if (s.stage === 'full') {
+    const secs = s.dpsFuel / (massProps(s).m * MOON_G / DPS.vex);
+    if (secs < 60 && s.phase === 'flying') once('f60', () => sound.cue('s60'));
+    if (secs < 30 && s.phase === 'flying') once('f30', () => sound.cue('s30'));
+    if (s.contactLight) once('contact', () => sound.cue('contact'));
+    if (lastDust > 0.25 && s.phase === 'flying') once('dust', () => sound.cue('dust'));
+    if (s.firstTouch) once('td', () => sound.thud(s.firstTouch.vVert));
+  }
+  if (s.descentPose?.vel && s.stage === 'ascent' && !s.brokeUp) once('abortack', () => sound.chat('abort_ack'));
+  if (s.ignition != null && !s.descentPose?.vel && !s.brokeUp) once('lift', () => { sound.chat(['liftoff']); sound.chat('liftoff_beautiful'); setTimeout(() => sound.chat('liftoff_ack'), 4000); });
   const hard = s.events.length && s.events[s.events.length - 1];
   if (hard && hard.sev >= 2 && hard.t > lastThud && /HIT|FAILED|BOTTOMED|BREACHED/.test(hard.text)) { lastThud = hard.t; sound.thud(5); }
-  if (s.phase === 'down' && !calls.down) { calls.down = true; setTimeout(() => {
-    sound.say(s.report.worst <= 1 ? 'Engine stop. Houston, we are down.' : 'We are down. Assessing damage.');
-    if (s.report.worst <= 1) setTimeout(() => sound.say('Roger, we copy you down. You got a bunch of guys about to turn blue.', { houston: true }), 3200);
-  }, 600); }
+  if (s.phase === 'down' && !calls.down) {
+    calls.down = true;
+    const w = s.report.worst;
+    setTimeout(() => {
+      if (s.brokeUp) { sound.chat('broke_up'); sound.chat('say_status'); }
+      else if (w <= 0) { sound.cue('eagle'); setTimeout(() => sound.cue('blue'), 6200); }
+      else if (w === 1) { sound.chat('hard_landing'); sound.chat('we_copy_down'); }
+      else { sound.chat('damaged_down'); sound.chat('say_status'); }
+    }, 600);
+  }
 }

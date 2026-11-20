@@ -45,7 +45,7 @@ export function createSound() {
     alarmGain = ctx.createGain(); alarmGain.gain.value = 0;
     const alp = ctx.createBiquadFilter(); alp.type = 'lowpass'; alp.frequency.value = 2400;
     alarmOsc.connect(alp); alp.connect(alarmGain); alarmGain.connect(master); alarmOsc.start();
-    decodeTape();
+    decodeTape(); decodeChat();
   }
   for (const ev of ['keydown', 'pointerdown']) addEventListener(ev, start, { once: false });
 
@@ -117,6 +117,33 @@ export function createSound() {
     if (houston) tone(2475, t1 + dur + 0.05, 0.25, 0.09);
   }
 
+  // canned radio chatter (tools/make_radio_chatter.py): transcript-style lines, synthesized offline and
+  // radio-processed; played in turn with the tape clips
+  let chatMeta = null, chatBytes = null, chatBuf = null;
+  fetch('assets/audio/chatter.json').then(r => r.json()).then(m => { chatMeta = m; }).catch(() => {});
+  fetch('assets/audio/chatter.wav').then(r => r.arrayBuffer()).then(b => { chatBytes = b; decodeChat(); }).catch(() => {});
+  function decodeChat() { if (ctx && chatBytes && !chatBuf) ctx.decodeAudioData(chatBytes.slice(0), d => { chatBuf = d; }); }
+  const WHO = { crew: 'LMP', houston: 'HOUSTON' };
+  function chat(ids) {
+    if (!chatMeta) return;
+    ids = [].concat(ids).filter(id => chatMeta.clips[id]);
+    if (!ids.length) return;
+    const text = ids.map(id => chatMeta.clips[id].text).join(' ');
+    const who = chatMeta.clips[ids[0]].who;
+    decodeChat();
+    if (!ctx || !on || !chatBuf) { subtitle?.(`${WHO[who]}: ${text}`); return; }
+    let t0 = Math.max(ctx.currentTime, busyUntil);
+    setTimeout(() => subtitle?.(`${WHO[who]}: ${text}`), Math.max(0, (t0 - ctx.currentTime) * 1000));
+    for (const id of ids) {
+      const [a, b] = chatMeta.clips[id].t;
+      const src = ctx.createBufferSource(); src.buffer = chatBuf;
+      const g = ctx.createGain(); g.gain.value = 1.3;
+      src.connect(g); g.connect(master); src.start(t0, a, b - a);
+      t0 += (b - a) - 0.12;            // parts of a callout run together
+    }
+    busyUntil = t0 + 0.25;
+  }
+
   // the player's own callouts (their real numbers): radio static and a subtitle, no voice
   let subtitle = null;
   function say(text, opts = {}) {
@@ -128,7 +155,7 @@ export function createSound() {
   return {
     get on() { return on; },
     toggle() { on = !on; if (master) master.gain.value = on ? 0.8 : 0; return on; },
-    say, cue,
+    say, cue, chat,
     get ready() { return { ctx: ctx ? ctx.state : null, tape: tape ? tape.duration : null }; },
     onSubtitle(fn) { subtitle = fn; },
     thud(v) { burst(70, 0.7, 0.35 + Math.min(0.6, v * 0.08), Math.min(1.5, 0.3 + v * 0.25)); if (v > 3) burst(400, 0.5, 0.5, Math.min(1, v * 0.1)); },

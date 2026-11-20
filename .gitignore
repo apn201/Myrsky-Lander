@@ -1,10 +1,11 @@
 # big source models, see data/SOURCES.md
-source/
 # local tooling
-.claude/
-__pycache__/
 *.pyc
-node_modules/
 .DS_Store
+.claude/
 Thumbs.db
+__pycache__/
+art/voices/*.onnx
+node_modules/
+source/
 tools/shots/

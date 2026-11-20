@@ -1,0 +1,510 @@
+{
+ "sampleRate": 11025,
+ "voice": "Piper, synthesized offline: crew en_US-joe-medium (CC0 data), Houston en_US-arctic-medium speaker rms (CMU ARCTIC)",
+ "clips": {
+  "h400": {
+   "t": [
+    0.0,
+    1.7099
+   ],
+   "who": "crew",
+   "text": "400 feet,",
+   "source": "transcript"
+  },
+  "h300": {
+   "t": [
+    1.7599,
+    3.4243
+   ],
+   "who": "crew",
+   "text": "300 feet,",
+   "source": "transcript"
+  },
+  "h250": {
+   "t": [
+    3.4743,
+    5.3891
+   ],
+   "who": "crew",
+   "text": "250 feet,",
+   "source": "transcript"
+  },
+  "h200": {
+   "t": [
+    5.4391,
+    7.0238
+   ],
+   "who": "crew",
+   "text": "200 feet,",
+   "source": "transcript"
+  },
+  "h150": {
+   "t": [
+    7.0737,
+    9.0569
+   ],
+   "who": "crew",
+   "text": "150 feet,",
+   "source": "transcript"
+  },
+  "h100": {
+   "t": [
+    9.1068,
+    10.6688
+   ],
+   "who": "crew",
+   "text": "100 feet,",
+   "source": "transcript"
+  },
+  "h75": {
+   "t": [
+    10.7187,
+    12.5538
+   ],
+   "who": "crew",
+   "text": "75 feet,",
+   "source": "transcript"
+  },
+  "h60": {
+   "t": [
+    12.6038,
+    14.0861
+   ],
+   "who": "crew",
+   "text": "60 feet,",
+   "source": "transcript"
+  },
+  "h50": {
+   "t": [
+    14.1361,
+    15.4932
+   ],
+   "who": "crew",
+   "text": "50 feet,",
+   "source": "transcript"
+  },
+  "h40": {
+   "t": [
+    15.5431,
+    16.923
+   ],
+   "who": "crew",
+   "text": "40 feet,",
+   "source": "transcript"
+  },
+  "h30": {
+   "t": [
+    16.973,
+    18.2503
+   ],
+   "who": "crew",
+   "text": "30 feet,",
+   "source": "transcript"
+  },
+  "h20": {
+   "t": [
+    18.3003,
+    19.5549
+   ],
+   "who": "crew",
+   "text": "20 feet,",
+   "source": "transcript"
+  },
+  "h10": {
+   "t": [
+    19.6049,
+    20.8595
+   ],
+   "who": "crew",
+   "text": "10 feet,",
+   "source": "transcript"
+  },
+  "r0.5": {
+   "t": [
+    20.9095,
+    22.2779
+   ],
+   "who": "crew",
+   "text": "down a half.",
+   "source": "transcript"
+  },
+  "r1": {
+   "t": [
+    22.3279,
+    23.6167
+   ],
+   "who": "crew",
+   "text": "down one.",
+   "source": "transcript"
+  },
+  "r1.5": {
+   "t": [
+    23.6667,
+    25.4335
+   ],
+   "who": "crew",
+   "text": "one and a half down.",
+   "source": "transcript"
+  },
+  "r2": {
+   "t": [
+    25.4834,
+    26.6698
+   ],
+   "who": "crew",
+   "text": "two down.",
+   "source": "transcript"
+  },
+  "r2.5": {
+   "t": [
+    26.7197,
+    28.3386
+   ],
+   "who": "crew",
+   "text": "two and a half down.",
+   "source": "transcript"
+  },
+  "r3": {
+   "t": [
+    28.3886,
+    29.6546
+   ],
+   "who": "crew",
+   "text": "three down.",
+   "source": "transcript"
+  },
+  "r3.5": {
+   "t": [
+    29.7046,
+    31.5852
+   ],
+   "who": "crew",
+   "text": "three and a half down.",
+   "source": "transcript"
+  },
+  "r4": {
+   "t": [
+    31.6352,
+    32.8785
+   ],
+   "who": "crew",
+   "text": "four down.",
+   "source": "transcript"
+  },
+  "r5": {
+   "t": [
+    32.9284,
+    34.1489
+   ],
+   "who": "crew",
+   "text": "five down.",
+   "source": "transcript"
+  },
+  "r6": {
+   "t": [
+    34.1989,
+    35.5788
+   ],
+   "who": "crew",
+   "text": "six down.",
+   "source": "transcript"
+  },
+  "r8": {
+   "t": [
+    35.6288,
+    36.8378
+   ],
+   "who": "crew",
+   "text": "eight down.",
+   "source": "transcript"
+  },
+  "r10": {
+   "t": [
+    36.8878,
+    38.1083
+   ],
+   "who": "crew",
+   "text": "ten down.",
+   "source": "transcript"
+  },
+  "r15": {
+   "t": [
+    38.1583,
+    39.6292
+   ],
+   "who": "crew",
+   "text": "fifteen down.",
+   "source": "transcript"
+  },
+  "r20": {
+   "t": [
+    39.6792,
+    41.0249
+   ],
+   "who": "crew",
+   "text": "twenty down.",
+   "source": "transcript"
+  },
+  "go_landing": {
+   "t": [
+    41.0748,
+    44.3323
+   ],
+   "who": "houston",
+   "text": "Houston. You're go for landing.",
+   "source": "transcript"
+  },
+  "go_landing_ack": {
+   "t": [
+    44.3823,
+    47.5605
+   ],
+   "who": "crew",
+   "text": "Roger. Understand, go for landing.",
+   "source": "transcript"
+  },
+  "looking_good": {
+   "t": [
+    47.6105,
+    50.5209
+   ],
+   "who": "houston",
+   "text": "Houston. You're looking great.",
+   "source": "transcript"
+  },
+  "coming_nicely": {
+   "t": [
+    50.5709,
+    52.2125
+   ],
+   "who": "crew",
+   "text": "Coming down nicely.",
+   "source": "transcript"
+  },
+  "lot_of_rocks": {
+   "t": [
+    52.2625,
+    55.1675
+   ],
+   "who": "crew",
+   "text": "Lot of rocks down there. Going long.",
+   "source": "game"
+  },
+  "drifting": {
+   "t": [
+    55.2175,
+    57.1779
+   ],
+   "who": "crew",
+   "text": "Drifting to the right a little.",
+   "source": "transcript"
+  },
+  "shadow": {
+   "t": [
+    57.2278,
+    58.5849
+   ],
+   "who": "crew",
+   "text": "Faint shadow.",
+   "source": "transcript"
+  },
+  "alarm_1202": {
+   "t": [
+    58.6349,
+    61.7563
+   ],
+   "who": "crew",
+   "text": "Program alarm. It's a twelve oh two.",
+   "source": "transcript"
+  },
+  "alarm_1201": {
+   "t": [
+    61.8063,
+    63.1747
+   ],
+   "who": "crew",
+   "text": "Twelve oh one.",
+   "source": "transcript"
+  },
+  "alarm_reading": {
+   "t": [
+    63.2247,
+    66.5736
+   ],
+   "who": "crew",
+   "text": "Give us a reading on the twelve oh two program alarm.",
+   "source": "transcript"
+  },
+  "alarm_go": {
+   "t": [
+    66.6236,
+    70.7668
+   ],
+   "who": "houston",
+   "text": "Roger. We've got, we're go on that alarm.",
+   "source": "transcript"
+  },
+  "alarm_go_same": {
+   "t": [
+    70.8168,
+    74.2299
+   ],
+   "who": "houston",
+   "text": "Roger. Same type. We're go.",
+   "source": "transcript"
+  },
+  "radar_lost": {
+   "t": [
+    74.2799,
+    77.0028
+   ],
+   "who": "crew",
+   "text": "Houston, we've lost the landing radar.",
+   "source": "game"
+  },
+  "radar_ack": {
+   "t": [
+    77.0528,
+    81.5431
+   ],
+   "who": "houston",
+   "text": "Roger. Fly it by eye. Watch your shadow.",
+   "source": "game"
+  },
+  "jet_stuck": {
+   "t": [
+    81.5931,
+    84.1681
+   ],
+   "who": "crew",
+   "text": "We've got a thruster firing on its own.",
+   "source": "game"
+  },
+  "jet_isolate": {
+   "t": [
+    84.218,
+    88.2057
+   ],
+   "who": "houston",
+   "text": "Roger. Isolate quad B. Quad B.",
+   "source": "game"
+  },
+  "throttle_stuck": {
+   "t": [
+    88.2557,
+    90.9786
+   ],
+   "who": "crew",
+   "text": "Throttle's stuck. We can't hold it.",
+   "source": "game"
+  },
+  "throttle_ack": {
+   "t": [
+    91.0286,
+    95.1119
+   ],
+   "who": "houston",
+   "text": "Roger. Your call. Abort if you have to.",
+   "source": "game"
+  },
+  "engine_out": {
+   "t": [
+    95.1619,
+    98.2718
+   ],
+   "who": "crew",
+   "text": "Descent engine's out! Abort stage!",
+   "source": "game"
+  },
+  "abort_ack": {
+   "t": [
+    98.3218,
+    101.7947
+   ],
+   "who": "houston",
+   "text": "Roger, abort. We copy abort.",
+   "source": "game"
+  },
+  "low_fuel": {
+   "t": [
+    101.8447,
+    103.7857
+   ],
+   "who": "houston",
+   "text": "Watch your fuel.",
+   "source": "game"
+  },
+  "hard_landing": {
+   "t": [
+    103.8356,
+    106.3878
+   ],
+   "who": "crew",
+   "text": "We hit hard. Checking the vehicle.",
+   "source": "game"
+  },
+  "say_status": {
+   "t": [
+    106.4378,
+    109.2405
+   ],
+   "who": "houston",
+   "text": "Roger. Say status.",
+   "source": "game"
+  },
+  "damaged_down": {
+   "t": [
+    109.2905,
+    112.6281
+   ],
+   "who": "crew",
+   "text": "Houston, we're down. We've got some damage.",
+   "source": "game"
+  },
+  "broke_up": {
+   "t": [
+    112.6781,
+    116.8239
+   ],
+   "who": "crew",
+   "text": "Houston, the stages separated. Cabin is holding pressure.",
+   "source": "game"
+  },
+  "we_copy_down": {
+   "t": [
+    116.8738,
+    120.7059
+   ],
+   "who": "houston",
+   "text": "Roger, we copy you down. Nice work.",
+   "source": "game"
+  },
+  "liftoff": {
+   "t": [
+    120.7558,
+    124.5373
+   ],
+   "who": "crew",
+   "text": "Abort stage, engine arm, ascent. Proceed.",
+   "source": "transcript"
+  },
+  "liftoff_beautiful": {
+   "t": [
+    124.5873,
+    128.1184
+   ],
+   "who": "crew",
+   "text": "Beautiful! Look at that stuff go all over the place.",
+   "source": "transcript"
+  },
+  "liftoff_ack": {
+   "t": [
+    128.1683,
+    131.9525
+   ],
+   "who": "houston",
+   "text": "Roger. We copy, ascent looking good.",
+   "source": "game"
+  }
+ }
+}
