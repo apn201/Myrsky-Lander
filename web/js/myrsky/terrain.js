@@ -1,5 +1,6 @@
 // Ground: LROC NAC height model (2 m) near the site, SLDEM2015 (59 m) out to the horizon.
-// Myrsky-Lander changes (20 Nov 2026): far-field visual relief and albedo outside the 2 m model only.
+// Myrsky-Lander changes (20 Nov 2026): far-field visual relief and albedo outside the 2 m model only;
+// terrain extended from 12 km to 40 km (the horizon from a few hundred metres up).
 // World axes: x = east, y = up, z = -north. Metres. Origin = Apollo 12 lander (Intrepid).
 // Code written with an AI assistant (Claude Code, Anthropic), Nov 2026.
 import * as THREE from 'three';
@@ -21,7 +22,14 @@ export function insideDTM(e, n) { return Math.abs(e - G.e) < G.half - 2 && Math.
 // height relative to the lander's ground, without curvature
 export function rawHeight(e, n) {
   if (insideDTM(e, n)) return sampleGrid(H, G.N, (e - (G.e - G.half)) / G.cell - 0.5, ((G.n + G.half) - n) / G.cell - 0.5, 0.01);
-  return sampleGrid(WH, W.N, (e + W.half) / (2 * W.half) * W.N - 0.5, (W.half - n) / (2 * W.half) * W.N - 0.5, 0.1);
+  const w = sampleGrid(WH, W.N, (e + W.half) / (2 * W.half) * W.N - 0.5, (W.half - n) / (2 * W.half) * W.N - 0.5, 0.1);
+  // Myrsky-Lander: beyond the SLDEM tile (12 km) the ground continues to the real horizon as gentle,
+  // visual-only undulation (a high camera sees ~30 km), instead of ending in a cliff
+  const r = Math.max(Math.abs(e), Math.abs(n));
+  if (r <= W.half - 400) return w;
+  const k = Math.min(1, (r - (W.half - 400)) / 6000);
+  const far = -15 + 22 * Math.sin(e / 3100 + 1.3) * Math.cos(n / 2700 - 0.4) + 9 * Math.sin((e + n) / 1300);
+  return w * (1 - k) + far * k;
 }
 export function heightAt(e, n) { return rawHeight(e, n) - curvatureDrop(e, n); }
 
@@ -91,11 +99,11 @@ export function buildTerrainMesh(material) {
 }
 
 export function buildWideMesh(material) {
-  const N = 161;
+  const N = 221;
   const pos = new Float32Array(N * N * 3), uv = new Float32Array(N * N * 2);
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
     const s = -1 + 2 * i / (N - 1), t = -1 + 2 * j / (N - 1);
-    const f = (x) => Math.sign(x) * Math.pow(Math.abs(x), 1.6) * (W.half - 200);
+    const f = (x) => Math.sign(x) * Math.pow(Math.abs(x), 1.9) * 40000;   // Myrsky-Lander: out to 40 km (horizon)
     const e = f(s), n = -f(t);
     let h = heightAt(e, n);
     if (insideDTM(e, n)) h -= 0.8; // the fine mesh sits on top
@@ -220,6 +228,9 @@ float farH(vec2 p){ return 2.2 * craters(p, 300.0, 0.3) + 1.2 * craters(p + 77.0
     }
     hfShadow = clamp(0.5 + 0.5 * minK, 0.0, 1.0);
     hfShadow = smoothstep(0.0, 1.0, hfShadow);
+    // Myrsky-Lander: the march only knows the 2 m height map; outside it, it read clamped edge heights
+    // and put the distant ground in false shadow. Fade it out toward the edge of the map.
+    hfShadow = mix(1.0, hfShadow, 1.0 - smoothstep(850.0, 1010.0, max(abs(vEN.x - GC.x), abs(vEN.y - GC.y))));
   }
 `)
       .replace('#include <lights_fragment_begin>', THREE.ShaderChunk.lights_fragment_begin) // onBeforeCompile sees includes unexpanded
@@ -259,7 +270,7 @@ float farH(vec2 p){ return 2.2 * craters(p, 300.0, 0.3) + 1.2 * craters(p + 77.0
     }
   }`);
   };
-  mat.customProgramCacheKey = () => 'terrain-v12g' + (wideCut ? 'w' : '');
+  mat.customProgramCacheKey = () => 'terrain-v12h' + (wideCut ? 'w' : '');
   return mat;
 }
 
@@ -277,7 +288,8 @@ float terrainSun(vec3 w){
   float tanEl = sd.y / max(horiz, 1e-4); vec2 en = vec2(w.x, -w.z);
   float h0 = w.y + 0.05, t = 0.6, minK = 1.0;
   for (int i = 0; i < tsSteps; i++) { float k = (h0 + tanEl * t - tsH(en + sdir * t)) / (t * 0.00931); minK = min(minK, k); t *= 1.12; if (t > 1500.0) break; }
-  return smoothstep(0.0, 1.0, clamp(0.5 + 0.5 * minK, 0.0, 1.0));
+  float edge = 1.0 - smoothstep(850.0, 1010.0, max(abs(en.x - ${G.e.toFixed(1)}), abs(en.y - ${G.n.toFixed(1)})));
+  return mix(1.0, smoothstep(0.0, 1.0, clamp(0.5 + 0.5 * minK, 0.0, 1.0)), edge);
 }`;
 export const tsUniforms = () => ({ tsHeight: TS.tHeight, tsSun: TS.sunDirW, tsOn: TS.hfOn, tsSteps: HF_STEPS });
 // add it to a MeshStandardMaterial (keeps any patch the material already has); the Sun is directional light 0
@@ -297,7 +309,7 @@ vTSW = (modelMatrix * tsw).xyz;`);
       .replace('#include <lights_fragment_begin>', 'float tsShadow = terrainSun(vTSW);\n' + THREE.ShaderChunk.lights_fragment_begin.replace(
         'getDirectionalLightInfo( directionalLight, directLight );', 'getDirectionalLightInfo( directionalLight, directLight );\n\t\tif ( UNROLLED_LOOP_INDEX == 0 ) directLight.color *= tsShadow;'));
   };
-  mat.customProgramCacheKey = () => prevKey + '+ts2';
+  mat.customProgramCacheKey = () => prevKey + '+ts3';
   return mat;
 }
 export function terrainShadowAll(root) {
