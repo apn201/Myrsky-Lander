@@ -3,14 +3,14 @@
 ## Physics (all real, all simple)
 
 - Gravity at the Apollo 12 site: about 1.62 m/s². No air: no drag, dust flies on ballistic paths.
-- Rocket equation: mass falls as fuel burns. LM descent engine: about 45 kN maximum thrust, throttle down to about 10 %, specific impulse about 311 s. Check every figure against the Apollo 12 Mission Report and LM documentation before using it.
+- Rocket equation: mass falls as fuel burns. Engine figures now come from Luminary 131 where it has them (see Prototype status); the rest are marked VERIFY or ESTIMATE in `web/js/game/lm.js`.
 - Attitude: RCS torque on a real moment of inertia. Optional assist mode holds the attitude you set.
 - Touchdown: leg contact on the height map. Judge vertical and horizontal speed and tilt against LM landing limits.
 - astropy does not run in the browser. Use it (and Astronomy Engine) in `tools/` to check constants and Sun/Earth positions; the game loop is plain JavaScript.
 
 ### Prototype status (20 Nov 2026)
 
-6-DOF rigid body (`physics.js`), autopilot (`dap.js`), vehicle data (`lm.js`), checked by `node tools/test_physics.mjs` (21 checks).
+6-DOF rigid body (`physics.js`), autopilot (`dap.js`), vehicle data (`lm.js`), checked by `node tools/test_physics.mjs` (20 checks).
 - Real values from Luminary 131 (Apollo 13 LM software, in the Space pilot project): descent engine exhaust velocity 2,955.9 m/s and FTP thrust 43,455 N, throttle lag 0.2 s, ascent exhaust velocity 3,030 m/s, 14 ms minimum jet pulse, the jet table for U/V rotation and X translation.
 - 16 RCS jets at their quads; torque about the moving centre of mass; inertia from the mass layout.
 - Rate command / attitude hold, P66 rate of descent (1 ft/s per click) or manual throttle, trim gimbal.
