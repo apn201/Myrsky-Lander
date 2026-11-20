@@ -1,67 +1,84 @@
-// Keyboard and touch controls. Produces { throttle: 0..1, rot: -1..1 } every frame.
-//   Keyboard: Up/W and Down/S move the throttle, Left/A and Right/D rotate, Space cuts the engine.
-//   Touch: drag up/down anywhere on the left half to set the throttle; hold the arrow buttons
-//   on the right to rotate.
-// "Left" means "push me left": it tilts the lander so the thrust points left.
+// Four-way controls for flying in the vertical plane, on a keyboard or a touch screen.
+//   ←/→  hand controller: tilt (rate command; let go and the attitude holds)
+//   ↑/↓  P66: one click of the rate-of-descent switch per press (+/- 1 ft/s, held = repeats)
+//        manual throttle mode: throttle up/down
+// Touch: put a finger anywhere and slide. Sideways = tilt, proportional to how far you slide.
+// Up/down = one ROD click per 28 px (manual mode: throttle).
+// Other keys: Space engine stop/arm, Enter liftoff, M throttle mode, F fine rate, C camera,
+// R restart, P pause.
 //
 // Code written with an AI assistant (Claude Code, Anthropic), 20 Nov 2026.
 
-const THROTTLE_RATE = 0.6;    // throttle change per second while a key is held
+const THROTTLE_RATE = 0.5;      // manual throttle travel per second while held
+const CLICK_REPEAT = 0.25;      // s between repeated ROD clicks while a key is held
+const CLICK_PX = 28;
 
 export function createInput(root) {
   const keys = new Set();
-  const state = { throttle: 0, rot: 0, touchRot: 0 };
   const handlers = {};
+  const st = { clicks: 0, throttle: 0.3, touchPitch: 0, repeat: 0, fine: false };
+  let mode = 'P66';
 
   addEventListener('keydown', e => {
-    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(e.key)) e.preventDefault();
+    const k = e.key.toLowerCase();
+    if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'enter'].includes(k)) e.preventDefault();
     if (e.repeat) return;
-    keys.add(e.key.toLowerCase());
-    if (e.key === ' ') state.throttle = 0;
-    handlers[e.key.toLowerCase()]?.();
+    keys.add(k);
+    if (mode === 'P66' && (k === 'arrowup' || k === 'w')) { st.clicks++; st.repeat = CLICK_REPEAT * 1.6; }
+    if (mode === 'P66' && (k === 'arrowdown' || k === 's')) { st.clicks--; st.repeat = CLICK_REPEAT * 1.6; }
+    if (k === 'f') st.fine = !st.fine;
+    handlers[k === ' ' ? 'space' : k]?.();
   });
   addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
   addEventListener('blur', () => keys.clear());
 
-  // touch: throttle strip
-  const strip = root.querySelector('#throttle-zone');
+  // touch: one finger, four ways
+  const pad = root.querySelector('#touch-pad');
   let drag = null;
-  strip.addEventListener('pointerdown', e => {
-    drag = { id: e.pointerId, y: e.clientY, t: state.throttle };
-    strip.setPointerCapture(e.pointerId);
+  pad.addEventListener('pointerdown', e => {
+    drag = { id: e.pointerId, x: e.clientX, y: e.clientY, yClick: e.clientY, thr: st.throttle };
+    pad.setPointerCapture(e.pointerId);
+    root.querySelector('#touch-dot').style.cssText = `display:block;left:${e.clientX}px;top:${e.clientY}px`;
   });
-  strip.addEventListener('pointermove', e => {
+  pad.addEventListener('pointermove', e => {
     if (!drag || e.pointerId !== drag.id) return;
-    const dy = (drag.y - e.clientY) / (innerHeight * 0.5);   // half a screen = full range
-    state.throttle = Math.max(0, Math.min(1, drag.t + dy));
+    st.touchPitch = Math.max(-1, Math.min(1, (e.clientX - drag.x) / 90));
+    if (mode === 'P66') {
+      while (drag.yClick - e.clientY >= CLICK_PX) { st.clicks++; drag.yClick -= CLICK_PX; navigator.vibrate?.(8); }
+      while (e.clientY - drag.yClick >= CLICK_PX) { st.clicks--; drag.yClick += CLICK_PX; navigator.vibrate?.(8); }
+    } else {
+      st.throttle = Math.max(0, Math.min(1, drag.thr + (drag.y - e.clientY) / (innerHeight * 0.45)));
+    }
   });
-  const endDrag = e => { if (drag && e.pointerId === drag.id) drag = null; };
-  strip.addEventListener('pointerup', endDrag);
-  strip.addEventListener('pointercancel', endDrag);
-
-  // touch: rotate buttons
-  for (const [id, dir] of [['#rot-left', 1], ['#rot-right', -1]]) {
-    const b = root.querySelector(id);
-    const on = e => { e.preventDefault(); b.setPointerCapture(e.pointerId); state.touchRot = dir; b.classList.add('down'); };
-    const off = () => { if (state.touchRot === dir) state.touchRot = 0; b.classList.remove('down'); };
-    b.addEventListener('pointerdown', on);
-    b.addEventListener('pointerup', off);
-    b.addEventListener('pointercancel', off);
-  }
+  const end = e => {
+    if (drag && e.pointerId === drag.id) { drag = null; st.touchPitch = 0; root.querySelector('#touch-dot').style.display = 'none'; }
+  };
+  pad.addEventListener('pointerup', end);
+  pad.addEventListener('pointercancel', end);
 
   return {
-    // call once per rendered frame
     read(dt) {
       const up = keys.has('arrowup') || keys.has('w');
       const down = keys.has('arrowdown') || keys.has('s');
-      if (up) state.throttle = Math.min(1, state.throttle + THROTTLE_RATE * dt);
-      if (down) state.throttle = Math.max(0, state.throttle - THROTTLE_RATE * dt);
+      if (mode === 'P66') {
+        if (up || down) {
+          st.repeat -= dt;
+          if (st.repeat <= 0) { st.clicks += up ? 1 : -1; st.repeat = CLICK_REPEAT; }
+        }
+      } else {
+        if (up) st.throttle = Math.min(1, st.throttle + THROTTLE_RATE * dt);
+        if (down) st.throttle = Math.max(0, st.throttle - THROTTLE_RATE * dt);
+      }
       const l = keys.has('arrowleft') || keys.has('a');
       const r = keys.has('arrowright') || keys.has('d');
-      state.rot = (l ? 1 : 0) - (r ? 1 : 0) || state.touchRot;
-      return { throttle: state.throttle, rot: state.rot };
+      const pitch = (r ? 1 : 0) - (l ? 1 : 0) || st.touchPitch;
+      const out = { pitch, roll: 0, yaw: 0, tx: 0, ty: 0, tz: 0, rodClicks: st.clicks, throttle: st.throttle, fine: st.fine };
+      st.clicks = 0;
+      return out;
     },
-    reset() { state.throttle = 0; state.rot = 0; state.touchRot = 0; },
+    setMode(m) { mode = m; },
+    setThrottle(t) { st.throttle = t; },
+    reset() { st.clicks = 0; st.touchPitch = 0; keys.clear(); },
     on(key, fn) { handlers[key] = fn; },
   };
 }

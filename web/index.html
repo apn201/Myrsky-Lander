@@ -7,58 +7,99 @@
 <title>Myrsky Lander</title>
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
 <style>
-  :root { --hud: #9dffb0; --warn: #ff7a5c; --dim: rgba(157,255,176,.45); }
+  :root { --hud: #9dffb0; --warn: #ffb04a; --bad: #ff6a4d; --dim: rgba(157,255,176,.45); }
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
   #view { display: block; width: 100vw; height: 100vh; height: 100dvh; }
-  .hud { position: fixed; font: 13px/1.35 ui-monospace, Menlo, Consolas, monospace; color: var(--hud); text-shadow: 0 0 4px #000, 0 0 2px #000; pointer-events: none; }
-  #readout { top: max(12px, env(safe-area-inset-top)); left: 16px; display: grid; grid-template-columns: auto auto auto; gap: 0 10px; }
+  .hud { position: fixed; font: 12px/1.35 ui-monospace, Menlo, Consolas, monospace; color: var(--hud); text-shadow: 0 0 4px #000, 0 0 2px #000; pointer-events: none; }
+  #readout { top: max(12px, env(safe-area-inset-top)); left: 16px; display: grid; grid-template-columns: auto auto auto; gap: 0 8px; }
   #readout span:nth-child(3n+1) { color: var(--dim); }
   #readout b { font-weight: normal; text-align: right; min-width: 6ch; }
-  .warn { color: var(--warn) !important; }
-  #status { top: max(12px, env(safe-area-inset-top)); right: 16px; text-align: right; }
-  #contact { opacity: .25; border: 1px solid currentColor; padding: 2px 6px; display: inline-block; }
+  #status { top: max(12px, env(safe-area-inset-top)); right: 16px; text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .lamp { opacity: .25; border: 1px solid currentColor; padding: 2px 6px; }
   #contact.on { opacity: 1; color: #000; background: #8cf0ff; border-color: #8cf0ff; text-shadow: none; }
-  #bingo { color: var(--warn); margin-top: 6px; min-height: 1.3em; }
-  #thr-bar { position: fixed; left: 16px; bottom: max(16px, env(safe-area-inset-bottom)); width: 10px; height: 30vh; border: 1px solid var(--dim); pointer-events: none; }
+  #engstop.on { opacity: 1; color: #000; background: var(--warn); border-color: var(--warn); text-shadow: none; }
+  #bingo { color: var(--bad); min-height: 1.3em; }
+  /* jets: four quads of four */
+  #jets { display: grid; grid-template-columns: repeat(4, auto); gap: 3px 8px; }
+  #jets div { display: grid; grid-template-columns: repeat(4, 7px); gap: 2px; }
+  #jets i { width: 7px; height: 7px; border: 1px solid var(--dim); box-sizing: border-box; }
+  #jets i.on { background: #fff; border-color: #fff; }
+  #jets i.dead { background: var(--bad); border-color: var(--bad); }
+  #legs { display: grid; grid-template-columns: auto 60px; gap: 2px 6px; align-items: center; }
+  .leg { height: 6px; border: 1px solid var(--dim); position: relative; }
+  .leg b { position: absolute; left: 0; top: 0; bottom: 0; background: var(--hud); }
+  .leg.touch { border-color: var(--hud); } .leg.warn b { background: var(--warn); } .leg.dead { border-color: var(--bad); } .leg.dead b { background: var(--bad); width: 100% !important; }
+  #log { bottom: max(16px, env(safe-area-inset-bottom)); right: 16px; text-align: right; max-width: 60vw; }
+  .sev0 { color: var(--hud); } .sev1 { color: #e8f08c; } .sev2 { color: var(--warn); } .sev3, .sev4 { color: var(--bad); }
+  #prompt { top: 40%; left: 0; right: 0; text-align: center; font-size: 16px; color: #8cf0ff; }
+  #thr-bar { position: fixed; left: 16px; bottom: max(16px, env(safe-area-inset-bottom)); width: 10px; height: 26vh; border: 1px solid var(--dim); pointer-events: none; }
   #thr-cmd { position: absolute; bottom: 0; left: 0; right: 0; background: var(--hud); opacity: .7; }
-  #help { bottom: max(16px, env(safe-area-inset-bottom)); left: 40px; color: var(--dim); }
-  #msg { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,.35); cursor: pointer; }
+  #help { bottom: max(16px, env(safe-area-inset-bottom)); left: 40px; color: var(--dim); max-width: 50vw; }
+  #msg { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,.55); }
   #msg[hidden] { display: none; }
-  #msg div { font: 15px/1.5 ui-monospace, Menlo, Consolas, monospace; color: var(--hud); text-align: center; max-width: min(92vw, 560px); padding: 0 16px; }
-  #msg h2 { font-size: 22px; letter-spacing: .08em; margin: 0 0 10px; }
-  /* touch controls: only on touch screens */
-  #throttle-zone { position: fixed; left: 0; top: 0; bottom: 0; width: 50vw; }
-  #rot { position: fixed; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); display: none; gap: 14px; }
-  #rot button { width: 72px; height: 72px; border-radius: 50%; border: 1px solid var(--dim); background: rgba(0,0,0,.35); color: var(--hud); font-size: 28px; }
-  #rot button.down { background: rgba(157,255,176,.25); }
-  @media (pointer: coarse) { #rot { display: flex; } #help .keys { display: none; } #help { bottom: calc(max(16px, env(safe-area-inset-bottom)) + 84px); } }
-  @media (pointer: fine) { #help .touch { display: none; } #throttle-zone { display: none; } }
+  #msg > div { font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace; color: var(--hud); max-width: min(92vw, 620px); padding: 0 16px; }
+  #msg h2 { font-size: 22px; letter-spacing: .08em; margin: 0 0 10px; text-align: center; }
+  #msg ul { padding-left: 18px; margin: 0 0 12px; }
+  #msg .buttons { display: flex; gap: 12px; justify-content: center; }
+  button { font: 13px ui-monospace, Menlo, Consolas, monospace; color: var(--hud); background: rgba(0,0,0,.4); border: 1px solid var(--dim); padding: 8px 14px; cursor: pointer; }
+  button[hidden] { display: none; }
+  /* touch */
+  #touch-pad { position: fixed; inset: 0; display: none; }
+  #touch-dot { position: fixed; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; border: 1px solid var(--dim); display: none; pointer-events: none; }
+  #touch-buttons { position: fixed; right: 16px; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 110px); display: none; flex-direction: column; gap: 10px; }
+  @media (pointer: coarse) { #touch-pad, #touch-buttons { display: flex; } #help .keys { display: none; } }
+  @media (pointer: fine) { #help .touch { display: none; } }
 </style>
 </head>
 <body>
 <canvas id="view"></canvas>
-<div id="throttle-zone"></div>
+<div id="touch-pad"></div><div id="touch-dot"></div>
 
 <div id="readout" class="hud">
   <span>ALT</span><b id="alt">0</b><span>m</span>
   <span>V/S</span><b id="vs">0</b><span>m/s</span>
   <span>H/S</span><b id="hs">0</b><span>m/s</span>
+  <span>LEAN</span><b id="lean">0</b><span>°</span>
   <span>THR</span><b id="thr">0</b><span>%</span>
-  <span>TILT</span><b id="pitch">0</b><span>°</span>
-  <span>FUEL</span><b id="fuel">0</b><span>kg</span>
-  <span>HOVER</span><b id="sec">0</b><span>s</span>
+  <span>MODE</span><b id="mode"></b><span></span>
+  <span id="dps-l">DPS</span><b id="dps">0</b><span>kg</span>
+  <span>RCS</span><b id="rcs">0</b><span>kg</span>
   <span>RANGE</span><b id="dist">0</b><span>m</span>
+  <span>LOAD</span><b id="g">0</b><span>g</span>
   <span>T</span><b id="met">0</b><span>s</span>
 </div>
-<div id="status" class="hud"><div id="contact">CONTACT LIGHT</div><div id="bingo"></div></div>
+<div id="status" class="hud">
+  <div id="contact" class="lamp">CONTACT LIGHT</div>
+  <div id="engstop" class="lamp">ENG STOP</div>
+  <div id="bingo"></div>
+  <div id="jets" title="RCS jets by quad">
+    <div><i id="j1"></i><i id="j2"></i><i id="j3"></i><i id="j4"></i></div>
+    <div><i id="j5"></i><i id="j6"></i><i id="j7"></i><i id="j8"></i></div>
+    <div><i id="j9"></i><i id="j10"></i><i id="j11"></i><i id="j12"></i></div>
+    <div><i id="j13"></i><i id="j14"></i><i id="j15"></i><i id="j16"></i></div>
+  </div>
+  <div id="legs">
+    <span>+Z</span><div class="leg"><b id="leg0"></b></div>
+    <span>−Z</span><div class="leg"><b id="leg1"></b></div>
+    <span>+Y</span><div class="leg"><b id="leg2"></b></div>
+    <span>−Y</span><div class="leg"><b id="leg3"></b></div>
+  </div>
+</div>
+<div id="prompt" class="hud"></div>
+<div id="log" class="hud"></div>
 <div id="thr-bar"><div id="thr-cmd"></div></div>
 <div id="help" class="hud">
-  <span class="keys">↑↓ throttle · ←→ tilt · space engine off · R restart · P pause</span>
-  <span class="touch">left side: drag for throttle · right: tilt</span>
+  <span class="keys">←→ tilt · ↑↓ descent rate (P66, 1 ft/s per click) · space engine stop · M manual throttle · enter liftoff · R restart</span>
+  <span class="touch">slide sideways to tilt · slide up/down to click the descent rate</span>
 </div>
-<div id="rot"><button id="rot-left" aria-label="tilt left">◀</button><button id="rot-right" aria-label="tilt right">▶</button></div>
+<div id="touch-buttons"><button id="btn-stop">ENG STOP</button><button id="btn-mode">MODE</button></div>
 
-<div id="msg" hidden><div><h2 id="msg-title"></h2><p id="msg-body"></p><p style="opacity:.6">tap or press R to fly again</p></div></div>
+<div id="msg" hidden><div>
+  <h2 id="msg-title"></h2>
+  <ul id="msg-body"></ul>
+  <p id="lift-note" style="text-align:center;opacity:.8"></p>
+  <div class="buttons"><button id="btn-lift" hidden>LIFT OFF (enter)</button><button id="btn-again">FLY AGAIN (R)</button></div>
+</div></div>
 
 <script type="module" src="js/game/main.js"></script>
 </body>

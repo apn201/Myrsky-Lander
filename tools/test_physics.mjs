@@ -1,71 +1,135 @@
-// Headless checks of web/js/game/physics.js.  Run: node tools/test_physics.mjs
+// Headless checks of the LM physics and autopilot.  Run: node tools/test_physics.mjs
 // Code written with an AI assistant (Claude Code, Anthropic), 20 Nov 2026.
-import { newState, step, LM, MOON_G, G0, mass, padHeight } from '../web/js/game/physics.js';
+import { newState, step, massProps, MOON_G, padHeight, tilt, attitude, liftoff } from '../web/js/game/physics.js';
+import { createDap, dapUpdate, setMode, RATE_MAX } from '../web/js/game/dap.js';
+import { DPS, GEAR, jet } from '../web/js/game/lm.js';
+import { cross, dot, qrot } from '../web/js/game/vec.js';
 
-const DT = 1 / 120;
+const DT = 1 / 480, DEG = Math.PI / 180;
 let fails = 0;
-const check = (name, ok, info) => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${info ? '  ' + info : ''}`); if (!ok) fails++; };
+const check = (name, ok, info = '') => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}  ${info}`); if (!ok) fails++; };
 const near = (a, b, tol) => Math.abs(a - b) <= tol;
+const NOSTICK = { pitch: 0, roll: 0, yaw: 0, tx: 0, ty: 0, tz: 0, rodClicks: 0, throttle: 0 };
+const fly = (s, d, inp, secs, until) => {
+  for (let i = 0; i < secs / DT; i++) {
+    const c = dapUpdate(d, s, typeof inp === 'function' ? inp(s) : inp, DT);
+    step(s, c, DT);
+    if (until && until(s)) break;
+  }
+  return s;
+};
 
-check('lunar gravity about 1.62', near(MOON_G, 1.624, 0.002), MOON_G.toFixed(4));
+check('lunar gravity', near(MOON_G, 1.624, 0.002), MOON_G.toFixed(4));
 
-// free fall for 2 s from rest: v = g t, drop = g t²/2
+// mass properties
 {
-  const s = newState({ x: 0, y: 1000, vx: 0, vy: 0, theta: 0 });
-  for (let i = 0; i < 240; i++) step(s, { throttle: 0, rot: 0 }, DT);
-  check('free fall speed', near(s.vy, -MOON_G * 2, 1e-6), s.vy.toFixed(4));
-  check('free fall drop', near(1000 - s.y, MOON_G * 2, 0.02), (1000 - s.y).toFixed(3));
+  const s = newState({ dpsFuel: 400 });
+  const { m, cg, I } = massProps(s);
+  check('LM mass near touchdown', m > 7000 && m < 7600, `${m.toFixed(0)} kg`);
+  check('centre of mass near the stage interface', Math.abs(cg[0]) < 0.8 && Math.abs(cg[1]) < 0.05, cg.map(c => c.toFixed(2)).join(', '));
+  check('inertia positive and plausible', I[0] > 3000 && I[4] > 5000 && I[8] > 5000 && I[4] < 40000,
+    `Ixx ${I[0].toFixed(0)} Iyy ${I[4].toFixed(0)} Izz ${I[8].toFixed(0)} kg·m²`);
 }
 
-// hover throttle holds height; propellant flow matches F / (Isp g0)
+// Luminary jet table gives torques about the U and V axes
 {
-  const s = newState({ x: 0, y: 1000, vx: 0, vy: 0, theta: 0 });
-  const f0 = s.fuel;
-  const thr = mass(s) * MOON_G / LM.thrustMax;
-  for (let i = 0; i < 120; i++) step(s, { throttle: thr, rot: 0 }, DT);
-  check('hover throttle in the real 10-60 % band', thr > 0.1 && thr < 0.6, (thr * 100).toFixed(1) + ' %');
-  check('hover holds height over 1 s', near(s.y, 1000, 0.05), s.y.toFixed(3));
-  const flow = thr * LM.thrustMax / (LM.isp * G0);
-  check('propellant flow from Isp', near(f0 - s.fuel, flow, 0.01), `${(f0 - s.fuel).toFixed(3)} kg/s`);
+  const U = [0, Math.SQRT1_2, Math.SQRT1_2], V = [0, -Math.SQRT1_2, Math.SQRT1_2];
+  const torque = ns => ns.map(n => cross(jet(n).pos, jet(n).dir)).reduce((a, b) => a.map((c, i) => c + b[i]));
+  const ok = (ns, axis, sign) => { const t = torque(ns); return dot(t, axis) * sign > 0.9 * Math.hypot(...t); };
+  check('jets 5,14 rotate +U and 6,13 -U', ok([5, 14], U, 1) && ok([6, 13], U, -1));
+  check('jets 1,10 rotate +V and 2,9 -V', ok([1, 10], V, 1) && ok([2, 9], V, -1));
 }
 
-// full stick reaches the commanded rate, centred stick holds attitude
+// free fall
 {
-  const s = newState({ x: 0, y: 1000, vx: 0, vy: 0, theta: 0 });
-  let t20 = null;
-  for (let i = 0; i < 1200 && t20 === null; i++) { step(s, { throttle: 0, rot: 1 }, DT); if (s.omega >= LM.rateMax * 0.99) t20 = s.t; }
-  check('reaches 20°/s rotation', t20 !== null, `in ${t20?.toFixed(2)} s`);
-  for (let i = 0; i < 1200; i++) step(s, { throttle: 0, rot: 0 }, DT);
-  check('centred stick stops rotation', Math.abs(s.omega) < 0.005, (s.omega * 180 / Math.PI).toFixed(3) + '°/s');
+  const s = newState({ alt: 1000, vel: [0, 0, 0], q: attitude(0), engStop: true, throttle: 0 });
+  const y0 = s.pos[1];
+  for (let i = 0; i < 2 / DT; i++) step(s, { throttle: 0, jets: [] }, DT);
+  check('free fall 2 s', near(s.vel[1], -2 * MOON_G, 1e-6) && near(y0 - s.pos[1], 2 * MOON_G, 0.01), s.vel[1].toFixed(4));
 }
 
-// touchdown judgement
+// P66 with no clicks holds the descent rate it started with; propellant flow = F / ve
 {
-  const s = newState({ x: 0, y: -LM.padY + 0.5, vx: 0.3, vy: -1, theta: 0 });
-  while (s.status === 'flying') step(s, { throttle: 0, rot: 0 }, DT);
-  check('soft touchdown lands', s.status === 'landed', s.reason);
-  const h = newState({ x: 0, y: 30, vx: 0, vy: -5, theta: 0 });
-  while (h.status === 'flying') step(h, { throttle: 0, rot: 0 }, DT);
-  check('hard touchdown crashes', h.status === 'crashed', h.reason);
+  const s = newState({ alt: 200, vel: [0, -1, 0], q: attitude(0) });
+  const d = createDap(); setMode(d, s, 'P66');
+  fly(s, d, NOSTICK, 10);
+  check('P66 holds 1 m/s descent', near(s.vel[1], -1, 0.03), s.vel[1].toFixed(3));
+  const f0 = s.dpsFuel, F = s.throttle * DPS.fRated;
+  fly(s, d, NOSTICK, 1);
+  check('descent propellant flow from Luminary exhaust velocity', near(f0 - s.dpsFuel, F / DPS.vex, 0.05), `${(f0 - s.dpsFuel).toFixed(2)} kg/s at ${(s.throttle * 100).toFixed(0)} %`);
+  fly(s, d, { ...NOSTICK, rodClicks: 3 }, DT);
+  fly(s, d, NOSTICK, 8);
+  check('three ROD clicks up: 3 ft/s slower descent', near(s.vel[1], -1 + 3 * 0.3048, 0.03), s.vel[1].toFixed(3));
 }
 
-// the default start can be flown down with fuel to spare by a simple autopilot
+// hand controller: rate command, then attitude hold
+{
+  const s = newState({ alt: 500, vel: [0, 0, 0], q: attitude(0) });
+  const d = createDap();
+  fly(s, d, { ...NOSTICK, pitch: 1 }, 3);
+  check('full forward stick: 20°/s pitch rate', near(-s.w[1], RATE_MAX, 0.6 * DEG), `${(s.w[1] / DEG).toFixed(1)}°/s`);
+  fly(s, d, NOSTICK, 4);
+  const q1 = s.q.slice();
+  fly(s, d, NOSTICK, 10);
+  const drift = Math.acos(Math.min(1, Math.abs(q1.reduce((a, c, i) => a + c * s.q[i], 0)))) * 2 / DEG;
+  check('centred stick holds attitude', Math.hypot(...s.w) < 0.3 * DEG && drift < 1, `rate ${(Math.hypot(...s.w) / DEG).toFixed(2)}°/s, drift ${drift.toFixed(2)}° in 10 s`);
+}
+
+// trim gimbal takes over from the RCS during a long burn
+{
+  const s = newState({ alt: 2000, vel: [0, 0, 0], q: attitude(0) });
+  const d = createDap(); setMode(d, s, 'P66');
+  fly(s, d, NOSTICK, 2);
+  const r0 = s.rcsFuel; fly(s, d, NOSTICK, 10); const early = r0 - s.rcsFuel;
+  fly(s, d, NOSTICK, 50);
+  const r1 = s.rcsFuel; fly(s, d, NOSTICK, 10); const late = r1 - s.rcsFuel;
+  check('trim gimbal cuts RCS use', late <= early, `RCS ${early.toFixed(2)} kg then ${late.toFixed(2)} kg per 10 s, gimbal ${s.gimbal.map(g => (g / DEG).toFixed(2)).join('/')}°`);
+}
+
+// touchdowns at different speeds, engine stopped, attitude held
+function drop(vDown, vSide = 0, tiltDeg = 0) {
+  const s = newState({ alt: 0.05, vel: [vSide, -vDown, 0], q: attitude(tiltDeg * DEG), engStop: true, throttle: 0 });
+  fly(s, createDap(), NOSTICK, 30, s => s.phase !== 'flying');
+  return s;
+}
+const sevs = s => s.report?.lines.filter(l => l.sev).map(l => l.text).join(' | ');
+{
+  const s = drop(1.0);
+  check('1 m/s touchdown: good landing', s.phase === 'down' && s.report.worst === 0, `${s.report?.verdict}, max stroke ${(Math.max(...s.legs.map(l => l.c)) * 100).toFixed(1)} cm ${sevs(s)}`);
+  const b = drop(3.0);
+  const st = Math.max(...b.legs.map(l => l.c));
+  check('3 m/s (design limit): uses roughly half the stroke', st > GEAR.stroke * 0.25 && st < GEAR.stroke * 0.75 && b.phase === 'down', `${(st * 100).toFixed(0)} cm, ${b.report?.verdict}, ${b.gPeak.toFixed(1)} g`);
+  const h = drop(5.5);
+  check('5.5 m/s: hard landing with damage, crew alive', h.phase === 'down' && h.report.worst >= 1 && !h.crewLost, `${h.report?.verdict}: ${sevs(h)}`);
+  const x = drop(15);
+  check('15 m/s: severe or crew lost', x.report && x.report.worst >= 3, `${x.report?.verdict}: ${sevs(x)}`);
+  const sl = drop(1.5, 3.0);
+  check('3 m/s sideways: not a clean landing', sl.report && sl.report.worst >= 1, `${sl.report?.verdict}, tilt ${(tilt(sl) / DEG).toFixed(0)}° ${sevs(sl)}`);
+}
+
+// a simple pilot flies the default start down in P66 with the stick
 {
   const s = newState();
-  while (s.status === 'flying' && s.t < 600) {
+  const d = createDap(); setMode(d, s, 'P66');
+  fly(s, d, s => {
     const h = padHeight(s);
-    const vyWant = -Math.max(0.8, Math.min(15, h * 0.12));          // descent rate schedule
-    const vxCap = Math.min(10, h * 0.08);                               // null drift before touchdown
-    const vxWant = Math.max(-vxCap, Math.min(vxCap, -s.x * 0.04));      // head for x = 0
-    const ay = Math.max(0, (vyWant - s.vy) * 1.0 + MOON_G);   // engine can only push up
-    const ax = (vxWant - s.vx) * 0.6;
-    const thWant = Math.max(-0.5, Math.min(0.5, Math.atan2(-ax, Math.max(0.3, ay))));
-    const rot = Math.max(-1, Math.min(1, (thWant - s.theta) * 3 - s.omega * 0.5));
-    const F = ay < 0.05 ? 0 : mass(s) * Math.hypot(ax, ay);
-    step(s, { throttle: F / LM.thrustMax, rot }, DT);
-  }
-  check('autopilot lands the default start', s.status === 'landed',
-    `${s.status} ${s.reason} t=${s.t.toFixed(0)} s, fuel left ${s.fuel.toFixed(0)} kg, ${s.x.toFixed(0)} m from target`);
+    const wantVy = -Math.max(0.6, Math.min(8, h * 0.08));
+    const vxCap = Math.min(10, h * 0.06);
+    const wantVx = Math.max(-vxCap, Math.min(vxCap, -s.pos[0] * 0.03));
+    const leanWant = Math.max(-20 * DEG, Math.min(20 * DEG, (wantVx - s.vel[0]) * 0.08));   // + = lean forward
+    const lean = Math.asin(Math.max(-1, Math.min(1, qrot(s.q, [1, 0, 0])[0])));
+    const pitch = Math.max(-1, Math.min(1, (leanWant - lean) * 3 + s.w[1] * 1.5));
+    const clicks = Math.round((wantVy - d.rod) / 0.3048);
+    if (s.contactLight) s.engStop = true;
+    return { ...NOSTICK, pitch, rodClicks: Math.max(-1, Math.min(1, clicks)) };
+  }, 400, s => s.phase !== 'flying');
+  check('P66 pilot lands the default start', s.phase === 'down' && s.report.worst <= 1,
+    `${s.report?.verdict} t=${s.t.toFixed(0)} s, fuel ${s.dpsFuel.toFixed(0)} kg, RCS ${s.rcsFuel.toFixed(0)} kg, ${Math.hypot(s.pos[0], s.pos[2]).toFixed(0)} m from target ${sevs(s)}`);
+
+  // ...and lifts off with attitude hold
+  const ok = liftoff(s);
+  fly(s, d, NOSTICK, 120, s => s.phase !== 'ascent');
+  check('liftoff climbs through 300 m', ok && s.phase === 'climbing', `${s.phase} t=${s.t.toFixed(0)} s, alt ${s.pos[1].toFixed(0)} m, APS ${s.apsFuel.toFixed(0)} kg`);
 }
 
 process.exit(fails ? 1 : 0);

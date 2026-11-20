@@ -10,15 +10,19 @@
 
 ### Prototype status (20 Nov 2026)
 
-Done: `web/js/game/physics.js`, checked by `node tools/test_physics.mjs` (gravity, hover, propellant flow from Isp, rotation, touchdown limits, a simple autopilot lands the default start with fuel to spare). Simplifications so far:
-- throttle is continuous 10-100 % (the real engine throttled 10-60 % plus a fixed full-thrust setting)
-- reaction-control propellant is not counted; moment of inertia does not change as fuel burns
-- touchdown is judged at the first pad contact, then the lander settles; no rigid-body leg contact or tipping yet
+6-DOF rigid body (`physics.js`), autopilot (`dap.js`), vehicle data (`lm.js`), checked by `node tools/test_physics.mjs` (21 checks).
+- Real values from Luminary 131 (Apollo 13 LM software, in the Space pilot project): descent engine exhaust velocity 2,955.9 m/s and FTP thrust 43,455 N, throttle lag 0.2 s, ascent exhaust velocity 3,030 m/s, 14 ms minimum jet pulse, the jet table for U/V rotation and X translation.
+- 16 RCS jets at their quads; torque about the moving centre of mass; inertia from the mass layout.
+- Rate command / attitude hold, P66 rate of descent (1 ft/s per click) or manual throttle, trim gimbal.
+- Legs: crushable stroke (no spring back), footpad friction, bottoming and failure; hull contacts damage the nozzle, descent stage, RCS quads, cabin; crew g-load. Result is a damage report, then liftoff with whatever survived.
+- Played in the vertical plane: ←/→ tilt, ↑/↓ ROD clicks. Crew assist nulls cross-range drift with RCS translation.
+
+Simplifications and estimates still open: leg truss modelled as one vertical crush stroke per leg (crush load, break loads, ground stiffness are estimates); quad height, gimbal pivot and nozzle clearance are estimates; side-jet numbering is ours; TAUROD 1.5 s and ROD scale are pad-loaded values we have not found yet; Luminary's failure-reconfiguration jet logic is not modelled.
 
 ## Controls
 
-- Like 1979: throttle up/down, rotate left/right. Motion in a vertical plane first, rendered in full 3D.
-- Keyboard: arrows or WASD. Phone: two thumb zones (throttle on one side, rotation on the other).
+- Four ways, like 1979: ←/→ tilt (hand controller), ↑/↓ descent rate clicks (P66) or throttle (manual). Physics is 3D, flying is in the vertical plane.
+- Phone: one finger, slide sideways to tilt and up/down to click the descent rate.
 
 ## Look
 

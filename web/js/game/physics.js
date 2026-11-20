@@ -1,150 +1,349 @@
-// Lunar module flight physics: one rigid body moving in a vertical plane.
-// x is downrange (metres), y is height above the local ground (metres), theta is the tilt
-// (radians, positive = counter-clockwise, which points the thrust toward -x).
-// Pure JavaScript, no three.js, so it runs in Node tests too.
-//
-// Figures marked VERIFY are from memory of Apollo documents and must be checked against the
-// Apollo 12 Mission Report / LM Data Book before the game claims them as real.
+// Lunar module rigid-body physics, 6 degrees of freedom.
+//   - mass, centre of mass and inertia tensor recomputed from the mass items as propellant burns
+//   - descent engine with throttle lag and trim gimbal, ascent engine, 16 RCS jets at their quads
+//   - four legs with crushable struts (stroke once, no spring back), footpad friction
+//   - hull contact points for everything else, with damage by part
+// World: +y up, x/z horizontal (x downrange). Body: the LM's X up, Y right, Z forward (see lm.js).
+// Pure JavaScript, no three.js: the tests run it in Node.
 //
 // Code written with an AI assistant (Claude Code, Anthropic), 20 Nov 2026.
+import { add, sub, scale, addScaled, dot, cross, len, qrot, qinvrot, qintegrate, qmul, qaxis, qfromBasis, m3v, m3inv } from './vec.js';
+import { G0, DPS, APS, RCS, MASS, GEAR, GROUND, LEGS, JETS, HULL_DESCENT, HULL_ASCENT, LIMITS } from './lm.js';
 
+export const MOON_GM = 4.9028e12;           // m³/s²
+export const MOON_R = 1737400;              // m, radius Myrsky uses for the site
+export const MOON_G = MOON_GM / MOON_R ** 2;
 const DEG = Math.PI / 180;
+const FLAT = { height: () => 0 };
 
-// Moon: surface gravity from GM and the radius Myrsky uses for the site.
-export const G0 = 9.80665;                 // standard gravity, m/s², defines specific impulse
-export const MOON_GM = 4.9028e12;          // m³/s² (IAU / JPL value)
-export const MOON_R = 1737400;             // m, mean radius used by Myrsky's terrain
-export const MOON_G = MOON_GM / (MOON_R * MOON_R);   // about 1.624 m/s²
-
-export const LM = {
-  dryMass: 6800,          // kg, LM at touchdown minus descent propellant. VERIFY (A12 report)
-  fuelStart: 750,         // kg of descent propellant at game start (a game choice)
-  thrustMax: 45040,       // N, descent engine full thrust, 10,125 lbf. VERIFY
-  throttleMin: 0.10,      // lowest throttle setting. Real engine: 10-60 %, then fixed full thrust
-  isp: 311,               // s, descent engine specific impulse. VERIFY
-  rcsJet: 445,            // N per reaction-control jet (100 lbf). VERIFY
-  rcsJets: 4,             // jets firing together for a pitch rotation
-  rcsArm: 1.67,           // m, jet moment arm. VERIFY
-  inertia: 14000,         // kg·m², pitch moment of inertia near touchdown. ESTIMATE, VERIFY
-  rateMax: 20 * DEG,      // rad/s, rotation rate at full stick (rate command, like the real stick)
-  padX: 4.72,             // m, footpad distance from centre line (9.45 m across). VERIFY
-  padY: -3.1,             // m, footpad bottom below the centre of mass. ESTIMATE
-  probe: 1.73,            // m, lunar surface sensing probe below the pad (67 in). VERIFY
-  limits: {               // touchdown limits. VERIFY (10 ft/s vertical, 4 ft/s horizontal)
-    vy: 3.05,
-    vx: 1.22,
-    tilt: 12 * DEG,
-    omega: 10 * DEG,
-  },
-};
-
-// Contact points in body coordinates. The forward (+x) leg carries the ladder and no probe.
-// The two side legs sit at x = 0 in this plane (they are at ±z).
-const PADS = [[-LM.padX, LM.padY], [LM.padX, LM.padY], [0, LM.padY]];
-const PROBES = [[-LM.padX, LM.padY - LM.probe], [0, LM.padY - LM.probe]];
+// Orientation with body X up, body Z (forward) along world +x, tilted back by pitchBack radians.
+export function attitude(pitchBack = 0, yaw = 0) {
+  const q0 = qfromBasis([0, 1, 0], [0, 0, 1], [1, 0, 0]);
+  return qmul(qmul(qaxis([0, 1, 0], -yaw), q0), qaxis([0, 1, 0], pitchBack));
+}
 
 export function newState(opts = {}) {
-  return {
+  const s = {
     t: 0,
-    x: -700, y: 500,          // start 500 m up, 700 m short of the target
-    vx: 18, vy: -14,
-    theta: 18 * DEG, omega: 0,
-    fuel: LM.fuelStart,
-    throttle: 0,              // effective throttle 0..1 after limits
-    rcs: 0,                   // -1, 0, 1: which way the jets fired this step
-    contact: false,           // contact light: a probe touched
-    status: 'flying',         // 'flying' | 'landed' | 'crashed'
-    reason: '',
-    touchdown: null,
+    phase: 'flying',            // flying | down | ascent | climbing | lost
+    stage: 'full',              // full | ascent
+    pos: [-450, 0, 0],          // centre of mass, world
+    vel: [14, -5, 0],
+    q: attitude(16 * DEG),
+    w: [0, 0, 0],               // body rates, rad/s
+    dpsFuel: 650,               // kg descent propellant at the start (a game choice)
+    apsFuel: MASS.apsProp.m,
+    rcsFuel: MASS.rcsProp.m,
+    throttle: 0.28,             // actual descent engine thrust, fraction of rated
+    engStop: false,             // ENGINE STOP latched
+    apsOn: false,
+    gimbal: [0, 0],             // trim gimbal about body Y and Z
+    jetsOn: new Array(17).fill(false),
+    failedJets: new Set(),
+    legs: LEGS.map(() => ({ c: 0, bottomed: false, broken: false, contact: false, load: 0 })),
+    touching: new Set(),
+    partHit: {},                // part -> worst impact speed so far
+    events: [],                 // { t, sev, text }
+    contactLight: false,
+    firstTouch: null,           // velocities at first footpad contact
+    gNow: 0, gPeak: 0,
+    settle: 0,
+    report: null,
+    descentPose: null,          // where the descent stage was left at liftoff
+    cg: null,
     ...opts,
   };
-}
-
-function toWorld(s, [bx, by]) {
-  const c = Math.cos(s.theta), n = Math.sin(s.theta);
-  return [s.x + bx * c - by * n, s.y + bx * n + by * c];
-}
-
-// Height of the lowest footpad above the ground: what the altitude readout shows.
-export function padHeight(s) {
-  return Math.min(...PADS.map(p => toWorld(s, p)[1]));
-}
-
-export function mass(s) {
-  return LM.dryMass + s.fuel;
-}
-
-// Burn time left at the thrust that would hold the current mass in a hover.
-export function hoverSecondsLeft(s) {
-  const f = mass(s) * MOON_G;
-  return s.fuel / (f / (LM.isp * G0));
-}
-
-// One fixed time step. cmd = { throttle: 0..1, rot: -1..1 }.
-export function step(s, cmd, dt) {
-  if (s.status !== 'flying') return s;
-
-  // engine: below half the minimum setting counts as off
-  let thr = cmd.throttle < LM.throttleMin * 0.5 ? 0 : Math.min(1, Math.max(LM.throttleMin, cmd.throttle));
-  if (s.fuel <= 0) thr = 0;
-  const F = thr * LM.thrustMax;
-  const m = mass(s);
-  const mdot = F / (LM.isp * G0);
-  const burnt = Math.min(s.fuel, mdot * dt);
-
-  // attitude: rate command. The stick asks for a rotation rate, the jets fire to reach it,
-  // and with the stick centred they hold the attitude (rate zero).
-  const want = Math.max(-1, Math.min(1, cmd.rot)) * LM.rateMax;
-  const err = want - s.omega;
-  const alphaMax = LM.rcsJets * LM.rcsJet * LM.rcsArm / LM.inertia;
-  let alpha = 0;
-  s.rcs = 0;
-  if (Math.abs(err) > 0.2 * DEG) {
-    alpha = Math.max(-alphaMax, Math.min(alphaMax, err / dt));
-    s.rcs = Math.sign(err);
-  }
-
-  // semi-implicit Euler
-  const ax = -Math.sin(s.theta) * F / m;
-  const ay = Math.cos(s.theta) * F / m - MOON_G;
-  s.vx += ax * dt;
-  s.vy += ay * dt;
-  s.omega += alpha * dt;
-  s.x += s.vx * dt;
-  s.y += s.vy * dt;
-  s.theta += s.omega * dt;
-  s.fuel -= burnt;
-  s.throttle = thr;
-  s.t += dt;
-
-  if (!s.contact && PROBES.some(p => toWorld(s, p)[1] <= 0)) s.contact = true;
-
-  const low = padHeight(s);
-  if (low <= 0) touchdown(s, low);
+  // start with the footpads at the requested height (default 300 m)
+  const h = opts.alt ?? 300;
+  s.cg = massProps(s).cg;
+  s.pos[1] += h - padHeight(s);
   return s;
 }
 
-function touchdown(s, low) {
-  const L = LM.limits;
-  const td = { vy: s.vy, vx: s.vx, tilt: s.theta, omega: s.omega, x: s.x, t: s.t, fuel: s.fuel };
-  s.touchdown = td;
-  const bad = [];
-  if (-s.vy > L.vy) bad.push(`came down at ${(-s.vy).toFixed(1)} m/s (limit ${L.vy.toFixed(1)})`);
-  if (Math.abs(s.vx) > L.vx) bad.push(`sliding sideways at ${Math.abs(s.vx).toFixed(1)} m/s (limit ${L.vx.toFixed(1)})`);
-  if (Math.abs(s.theta) > L.tilt) bad.push(`tilted ${(Math.abs(s.theta) / DEG).toFixed(0)}° (limit ${(L.tilt / DEG).toFixed(0)}°)`);
-  if (Math.abs(s.omega) > L.omega) bad.push(`still rotating at ${(Math.abs(s.omega) / DEG).toFixed(0)}°/s`);
+// ---------- mass properties ----------
+function items(s) {
+  const out = [MASS.ascentDry, { ...MASS.apsProp, m: s.apsFuel }, { ...MASS.rcsProp, m: s.rcsFuel }];
+  if (s.stage === 'full') out.push(MASS.descentDry, { ...MASS.dpsProp, m: s.dpsFuel });
+  return out;
+}
 
-  s.y -= low;              // put the lowest pad on the ground
-  s.throttle = 0;
-  s.rcs = 0;
-  if (bad.length) {
-    s.status = 'crashed';
-    s.reason = bad.join(', ');
-  } else {
-    // flat ground: the lander settles onto all four pads
-    s.status = 'landed';
-    s.theta = 0;
-    s.y = -LM.padY;
-    s.vx = s.vy = s.omega = 0;
+export function massProps(s) {
+  const list = items(s);
+  let m = 0, c = [0, 0, 0];
+  for (const it of list) { m += it.m; c = addScaled(c, it.at, it.m); }
+  c = scale(c, 1 / m);
+  const I = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+  for (const it of list) {
+    const [sx, sy, sz] = it.size, k = it.m / 12;
+    I[0] += k * (sy * sy + sz * sz); I[4] += k * (sx * sx + sz * sz); I[8] += k * (sx * sx + sy * sy);
+    const r = sub(it.at, c), r2 = dot(r, r);
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) I[i * 3 + j] += it.m * ((i === j ? r2 : 0) - r[i] * r[j]);
   }
+  return { m, cg: c, I, Iinv: m3inv(I) };
+}
+
+// ---------- geometry helpers ----------
+const toWorld = (s, pb) => add(s.pos, qrot(s.q, sub(pb, s.cg)));
+const pointVel = (s, pw) => add(s.vel, cross(qrot(s.q, s.w), sub(pw, s.pos)));
+export function padJointBody(leg, st) { return [leg.joint[0] + st.c, leg.joint[1], leg.joint[2]]; }
+export function padBottomWorld(s, i) { return add(toWorld(s, padJointBody(LEGS[i], s.legs[i])), [0, -GEAR.padDrop, 0]); }
+
+// Height of the lowest working footpad above the ground (what the altimeter shows).
+export function padHeight(s, world = FLAT) {
+  if (s.stage !== 'full') return lowestHull(s, world);
+  let h = Infinity;
+  LEGS.forEach((l, i) => { if (!s.legs[i].broken) { const p = padBottomWorld(s, i); h = Math.min(h, p[1] - world.height(p[0], p[2])); } });
+  return h === Infinity ? lowestHull(s, world) : h;
+}
+function lowestHull(s, world) {
+  let h = Infinity;
+  for (const pt of hull(s)) { const p = toWorld(s, pt.p); h = Math.min(h, p[1] - world.height(p[0], p[2])); }
+  return h;
+}
+const hull = s => s.stage === 'full' ? [...HULL_DESCENT, ...HULL_ASCENT] : HULL_ASCENT;
+
+export const tilt = s => Math.acos(Math.max(-1, Math.min(1, qrot(s.q, [1, 0, 0])[1])));
+
+// Ground reaction at a point: spring-damper normal force and capped viscous friction.
+function groundForce(pw, vw, g, world) {
+  const p = world.height(pw[0], pw[2]) - pw[1];
+  if (p <= 0) return null;
+  const c = 2 * g.zeta * Math.sqrt(g.k * g.mEff);
+  const fn = Math.max(0, g.k * p - c * vw[1]);
+  const vt = [vw[0], 0, vw[2]], sp = len(vt);
+  const ft = sp > 1e-6 ? scale(vt, -Math.min(g.mu * fn / sp, 4e4)) : [0, 0, 0];
+  return { F: [ft[0], fn, ft[2]], p, vn: vw[1] };
+}
+
+function log(s, sev, text) { s.events.push({ t: s.t, sev, text }); }
+
+// ---------- one step ----------
+// ctl = { throttle: fraction of rated thrust wanted (0 = none), jets: bool[17] }
+export function step(s, ctl, dt, world = FLAT) {
+  const mp = massProps(s);
+  if (s.cg) s.pos = add(s.pos, qrot(s.q, sub(mp.cg, s.cg)));   // geometry stays put as the CG moves
+  s.cg = mp.cg;
+  const { m, cg, I, Iinv } = mp;
+
+  let Fw = [0, -MOON_G * m, 0];            // world-frame force
+  let Fb = [0, 0, 0], Tb = [0, 0, 0];      // body-frame non-gravity force and torque about the CG
+  const bodyForce = (f, at) => { Fb = add(Fb, f); Tb = add(Tb, cross(sub(at, cg), f)); };
+
+  // descent engine
+  if (s.stage === 'full') {
+    let want = ctl.throttle > 0 ? Math.max(DPS.minFrac, ctl.throttle) : 0;
+    if (want > DPS.maxThrottleFrac) want = DPS.fFTP / DPS.fRated;      // past 65 %: full throttle position
+    if (s.engStop || s.dpsFuel <= 0 || s.dpsFailed) want = 0;
+    s.throttle += (want - s.throttle) * Math.min(1, dt / DPS.lag);
+    if (s.throttle < 0.01 && want === 0) s.throttle = 0;
+    const F = s.throttle * DPS.fRated;
+    if (F > 0) {
+      // trim gimbal drives the thrust line toward the centre of mass
+      const d = sub(cg, DPS.pivot);
+      const ideal = [-Math.atan2(d[2], d[0]), Math.atan2(d[1], d[0])];
+      for (let i = 0; i < 2; i++) {
+        const e = ideal[i] - s.gimbal[i], stepMax = DPS.gimbalRate * dt;
+        s.gimbal[i] = Math.max(-DPS.gimbalMax, Math.min(DPS.gimbalMax, s.gimbal[i] + Math.max(-stepMax, Math.min(stepMax, e))));
+      }
+      const [gy, gz] = s.gimbal;
+      const dir = [Math.cos(gy) * Math.cos(gz), Math.sin(gz), -Math.sin(gy) * Math.cos(gz)];
+      bodyForce(scale(dir, F), DPS.pivot);
+      s.dpsFuel = Math.max(0, s.dpsFuel - F / DPS.vex * dt);
+    }
+  }
+  // ascent engine
+  if (s.stage === 'ascent' && s.apsOn && s.apsFuel > 0) {
+    bodyForce([APS.thrust, 0, 0], APS.point);
+    s.apsFuel = Math.max(0, s.apsFuel - APS.thrust / APS.vex * dt);
+  }
+  // reaction control jets
+  const flow = RCS.thrust / (RCS.isp * G0);
+  for (const j of JETS) {
+    const on = !!ctl.jets?.[j.n] && !s.failedJets.has(j.n) && s.rcsFuel > 0;
+    s.jetsOn[j.n] = on;
+    if (on) { bodyForce(scale(j.dir, RCS.thrust), j.pos); s.rcsFuel = Math.max(0, s.rcsFuel - flow * dt); }
+  }
+
+  // ground contact: footpads through the crushable struts
+  let grounded = false;
+  if (s.stage === 'full') {
+    LEGS.forEach((leg, i) => {
+      const st = s.legs[i];
+      st.contact = false; st.load = 0;
+      if (st.broken) return;
+      const jw = toWorld(s, padJointBody(leg, st));
+      if (leg.probe && !s.contactLight) {
+        const tip = toWorld(s, addScaled(padJointBody(leg, st), [1, 0, 0], -(GEAR.padDrop + GEAR.probe)));
+        if (tip[1] <= world.height(tip[0], tip[2])) { s.contactLight = true; log(s, 0, 'CONTACT LIGHT'); }
+      }
+      const pw = add(jw, [0, -GEAR.padDrop, 0]);
+      // the pad moves with the body minus the strut shortening: while the honeycomb crushes
+      // the pad stays put on the ground
+      const upW = qrot(s.q, [1, 0, 0]);
+      const vPad = addScaled(pointVel(s, pw), upW, st.cdot || 0);
+      st.cdot = 0;
+      const g = groundForce(pw, vPad, GROUND.pad, world);
+      if (!g) return;
+      st.contact = grounded = true;
+      if (!s.firstTouch) {
+        const hv = Math.hypot(s.vel[0], s.vel[2]);
+        s.firstTouch = { vVert: -s.vel[1], vHoriz: hv, tilt: tilt(s), t: s.t };
+        log(s, 0, `TOUCHDOWN ${(-s.vel[1]).toFixed(2)} m/s down, ${hv.toFixed(2)} m/s across`);
+      }
+      let F = g.F;
+      let fb = qinvrot(s.q, F);
+      const axial = fb[0];                                      // load along the crush stroke (body X)
+      if (!st.bottomed && axial > GEAR.crush) {
+        // honeycomb crushes: the strut shortens and the load stays at the crush level
+        // pad held still on the ground, strut shortening as fast as the body closes on the pad
+        const k = GEAR.crush / axial;
+        st.cdot = Math.max(0, -dot(pointVel(s, pw), upW));
+        st.c = Math.min(GEAR.stroke, st.c + st.cdot * dt);
+        F = scale(F, k); fb = scale(fb, k);
+        if (st.c >= GEAR.stroke) { st.bottomed = true; log(s, 2, `LEG ${leg.name} BOTTOMED OUT: all ${(GEAR.stroke * 100).toFixed(0)} cm of strut stroke used`); }
+      }
+      const ax2 = fb[0];
+      // the secondary struts carry the load across the primary strut; what breaks a leg sideways
+      // is the horizontal (sliding) force at the pad
+      const lateral = Math.hypot(F[0], F[2]);
+      if ((st.bottomed && ax2 > GEAR.breakAxial) || lateral > GEAR.breakLateral) {
+        st.broken = true;
+        log(s, 3, `LEG ${leg.name} FAILED (${lateral > GEAR.breakLateral ? 'side load' : 'overload after bottoming'})`);
+        return;
+      }
+      st.load = ax2;
+      Fw = add(Fw, F);
+      Tb = add(Tb, cross(qinvrot(s.q, sub(pw, s.pos)), fb));
+    });
+  }
+
+  // hull points
+  const nowTouching = new Set();
+  hull(s).forEach((pt, idx) => {
+    const pw = toWorld(s, pt.p);
+    const g = groundForce(pw, pointVel(s, pw), GROUND.hull, world);
+    if (!g) return;
+    grounded = true;
+    const key = pt.part + idx;
+    nowTouching.add(key);
+    if (!s.touching.has(key)) hit(s, pt.part, Math.max(0, -g.vn));
+    Fw = add(Fw, g.F);
+    Tb = add(Tb, cross(qinvrot(s.q, sub(pw, s.pos)), qinvrot(s.q, g.F)));
+  });
+  s.touching = nowTouching;
+
+  // crew load: specific force (everything except gravity), smoothed over about 50 ms
+  const contactW = add(Fw, [0, MOON_G * m, 0]);
+  const specific = len(add(qrot(s.q, Fb), contactW)) / m / G0;
+  s.gNow += (specific - s.gNow) * Math.min(1, dt / 0.05);
+  s.gPeak = Math.max(s.gPeak, s.gNow);
+
+  // integrate (semi-implicit Euler)
+  Fw = add(Fw, qrot(s.q, Fb));
+  s.vel = addScaled(s.vel, Fw, dt / m);
+  s.pos = addScaled(s.pos, s.vel, dt);
+  const Iw = m3v(I, s.w);
+  const wdot = m3v(Iinv, sub(Tb, cross(s.w, Iw)));
+  s.w = addScaled(s.w, wdot, dt);
+  s.q = qintegrate(s.q, s.w, dt);
+  s.t += dt;
+
+  phaseLogic(s, grounded, m, world, dt);
+  return s;
+}
+
+// ---------- damage ----------
+function worse(s, part, v) { const was = s.partHit[part] ?? 0; s.partHit[part] = Math.max(was, v); return was; }
+
+function hit(s, part, v) {
+  const was = worse(s, part, v);
+  const crossed = lim => v >= lim && was < lim;
+  if (part === 'nozzle') {
+    if (crossed(0.02)) {
+      log(s, 1, 'DESCENT ENGINE NOZZLE HIT THE GROUND (the extension is built to crumple)');
+      if (s.throttle > 0.05) { s.dpsFailed = true; log(s, 2, 'DESCENT ENGINE SHUT DOWN: nozzle blocked'); }
+    }
+  } else if (part === 'descent') {
+    if (crossed(2.5)) log(s, 2, `DESCENT STAGE STRUCTURE DAMAGED (hit at ${v.toFixed(1)} m/s)`);
+    else if (crossed(0.4)) log(s, 1, `DESCENT STAGE SCRAPED THE GROUND (${v.toFixed(1)} m/s)`);
+  } else if (part.startsWith('quad')) {
+    const q = part.slice(4);
+    if (crossed(0.15)) {
+      for (const j of JETS) if (j.quad === q) s.failedJets.add(j.n);
+      log(s, 2, `RCS QUAD ${q} DESTROYED: its 4 jets are lost`);
+    }
+  } else if (part === 'ascent') {
+    if (crossed(2.0)) { log(s, 4, `ASCENT STAGE CABIN BREACHED (${v.toFixed(1)} m/s): crew lost`); s.crewLost = true; }
+    else if (crossed(0.3)) log(s, 2, `ASCENT STAGE HIT THE GROUND (${v.toFixed(1)} m/s)`);
+  }
+}
+
+function phaseLogic(s, grounded, m, world, dt) {
+  if (s.gNow > 35 && !s.crewLost) { s.crewLost = true; log(s, 4, `CREW LOST: ${s.gNow.toFixed(0)} g impact`); }
+  if (s.crewLost && s.phase !== 'lost') { s.phase = 'lost'; s.report = report(s, world); return; }
+
+  const still = len(s.vel) < 0.05 && len(s.w) < 0.3 * DEG;
+  const thrusting = (s.stage === 'full' && s.throttle * DPS.fRated > 0.2 * m * MOON_G) || (s.stage === 'ascent' && s.apsOn && s.apsFuel > 0);
+  if ((s.phase === 'flying' || s.phase === 'ascent') && grounded && still && !thrusting) {
+    s.settle += dt;
+    if (s.settle > 1.5) { s.phase = s.stage === 'full' ? 'down' : 'lost'; s.report = report(s, world); }
+  } else s.settle = 0;
+
+  if (s.phase === 'ascent' && s.pos[1] - world.height(s.pos[0], s.pos[2]) > 300 && s.vel[1] > 0) {
+    s.phase = 'climbing';
+    log(s, 0, 'ASCENT STAGE CLIMBING THROUGH 300 m');
+    s.report = report(s, world);
+  }
+}
+
+// What happened, in order of severity. sev: 0 fine, 1 minor, 2 damaged, 3 severe, 4 crew lost.
+export function report(s, world = FLAT) {
+  const lines = [];
+  const put = (sev, text) => lines.push({ sev, text });
+  const ft = s.firstTouch;
+  if (ft) {
+    const within = ft.vVert <= LIMITS.vVert && ft.vHoriz <= LIMITS.vHoriz;
+    put(within ? 0 : 1, `Touchdown ${ft.vVert.toFixed(2)} m/s down, ${ft.vHoriz.toFixed(2)} m/s across (design limits ${LIMITS.vVert} and ${LIMITS.vHoriz})`);
+  }
+  if (s.stage === 'full') {
+    s.legs.forEach((st, i) => {
+      const n = LEGS[i].name;
+      if (st.broken) put(3, `Leg ${n}: failed`);
+      else if (st.bottomed) put(2, `Leg ${n}: strut bottomed out`);
+      else if (st.c > 0.005) put(st.c > GEAR.stroke * 0.6 ? 1 : 0, `Leg ${n}: strut crushed ${(st.c * 100).toFixed(0)} of ${(GEAR.stroke * 100).toFixed(0)} cm`);
+    });
+    const tl = tilt(s) / DEG;
+    put(tl > 60 ? 3 : tl > 30 ? 2 : tl > 12 ? 1 : 0, `Resting tilt ${tl.toFixed(1)}°${tl > 12 ? ': the ascent stage will leave at an angle' : ''}`);
+  }
+  for (const e of s.events) if (e.sev > 0 && !e.text.startsWith('LEG')) put(e.sev, e.text.charAt(0) + e.text.slice(1).toLowerCase());
+  const g = s.gPeak;
+  put(g > 35 ? 4 : g > 20 ? 3 : g > 10 ? 2 : g > 4 ? 1 : 0,
+    `Peak load on the crew ${g.toFixed(1)} g${g > 20 ? ': serious injuries' : g > 10 ? ': crew injured' : g > 4 ? ': hard jolt, crew shaken' : ''}`);
+  const quadsLost = new Set([...s.failedJets].map(n => JETS[n - 1].quad)).size;
+  if (s.stage === 'full') put(0, `Propellant left: descent ${s.dpsFuel.toFixed(0)} kg, RCS ${s.rcsFuel.toFixed(0)} kg`);
+  put(0, `${Math.hypot(s.pos[0], s.pos[2]).toFixed(0)} m from the Apollo 12 landing spot`);
+  const worst = Math.max(0, ...lines.map(l => l.sev));
+  const verdict = s.crewLost ? 'CREW LOST'
+    : s.phase === 'climbing' ? 'ASCENT UNDER WAY'
+    : s.stage === 'ascent' ? 'ASCENT FAILED'
+    : ['GOOD LANDING', 'HARD LANDING', 'LANDED WITH DAMAGE', 'SEVERE DAMAGE', 'CREW LOST'][worst];
+  const canLift = s.stage === 'full' && !s.crewLost && !(s.partHit.ascent >= 2);
+  return { verdict, worst, lines: lines.sort((a, b) => b.sev - a.sev), canLift, quadsLost };
+}
+
+// ---------- liftoff ----------
+export function liftoff(s) {
+  if (s.phase !== 'down' || !s.report?.canLift) return false;
+  const origin = sub(s.pos, qrot(s.q, s.cg));          // body origin in the world
+  s.descentPose = { origin, q: s.q.slice(), legs: s.legs.map(l => ({ ...l })) };
+  s.stage = 'ascent';
+  const cgA = massProps(s).cg;
+  s.cg = cgA;
+  s.pos = add(origin, qrot(s.q, cgA));
+  s.vel = [0, 0, 0]; s.w = [0, 0, 0];
+  s.apsOn = true; s.throttle = 0;
+  s.phase = 'ascent'; s.settle = 0; s.report = null;
+  s.touching = new Set();
+  log(s, 0, 'ABORT STAGE / ASCENT ENGINE ON');
+  return true;
 }
