@@ -3,7 +3,8 @@
 //   - descent engine with throttle lag and trim gimbal, ascent engine, 16 RCS jets at their quads
 //   - four legs with crushable struts (stroke once, no spring back), footpad friction
 //   - hull contact points for everything else, with damage by part
-// World: +y up, x/z horizontal (x downrange). Body: the LM's X up, Y right, Z forward (see lm.js).
+// World: Myrsky's axes, x east, y up, z = -north, origin at Intrepid's spot. The approach is westward (-x),
+// as Apollo 12's was. Body: the LM's X up, Y right, Z forward (see lm.js).
 // Pure JavaScript, no three.js: the tests run it in Node.
 //
 // Code written with an AI assistant (Claude Code, Anthropic), 20 Nov 2026.
@@ -16,9 +17,10 @@ export const MOON_G = MOON_GM / MOON_R ** 2;
 const DEG = Math.PI / 180;
 const FLAT = { height: () => 0 };
 
-// Orientation with body X up, body Z (forward) along world +x, tilted back by pitchBack radians.
+// Orientation with body X up, body Z (forward) toward the west (world -x), tilted back by pitchBack radians.
+export const Q_UPRIGHT = qfromBasis([0, 1, 0], [0, 0, -1], [-1, 0, 0]);
 export function attitude(pitchBack = 0, yaw = 0) {
-  const q0 = qfromBasis([0, 1, 0], [0, 0, 1], [1, 0, 0]);
+  const q0 = Q_UPRIGHT;
   return qmul(qmul(qaxis([0, 1, 0], -yaw), q0), qaxis([0, 1, 0], pitchBack));
 }
 
@@ -27,8 +29,8 @@ export function newState(opts = {}) {
     t: 0,
     phase: 'flying',            // flying | down | ascent | climbing | lost
     stage: 'full',              // full | ascent
-    pos: [-450, 0, 0],          // centre of mass, world
-    vel: [14, -5, 0],
+    pos: [450, 0, 0],           // centre of mass, world: 450 m east of the target
+    vel: [-14, -5, 0],
     q: attitude(16 * DEG),
     w: [0, 0, 0],               // body rates, rad/s
     dpsFuel: 650,               // kg descent propellant at the start (a game choice)
@@ -104,15 +106,24 @@ const hull = s => s.stage === 'full' ? [...HULL_DESCENT, ...HULL_ASCENT] : HULL_
 
 export const tilt = s => Math.acos(Math.max(-1, Math.min(1, qrot(s.q, [1, 0, 0])[1])));
 
-// Ground reaction at a point: spring-damper normal force and capped viscous friction.
+// Ground reaction at a point: spring-damper along the local surface normal, capped viscous friction.
+export function groundNormal(world, x, z) {
+  if (!world.slope) return [0, 1, 0];
+  const e = 0.5, hx = (world.height(x + e, z) - world.height(x - e, z)) / (2 * e), hz = (world.height(x, z + e) - world.height(x, z - e)) / (2 * e);
+  const l = Math.hypot(hx, 1, hz);
+  return [-hx / l, 1 / l, -hz / l];
+}
 function groundForce(pw, vw, g, world) {
-  const p = world.height(pw[0], pw[2]) - pw[1];
-  if (p <= 0) return null;
+  const dh = world.height(pw[0], pw[2]) - pw[1];
+  if (dh <= 0) return null;
+  const n = groundNormal(world, pw[0], pw[2]);
+  const p = dh * n[1];
+  const vn = dot(vw, n);
   const c = 2 * g.zeta * Math.sqrt(g.k * g.mEff);
-  const fn = Math.max(0, g.k * p - c * vw[1]);
-  const vt = [vw[0], 0, vw[2]], sp = len(vt);
+  const fn = Math.max(0, g.k * p - c * vn);
+  const vt = addScaled(vw, n, -vn), sp = len(vt);
   const ft = sp > 1e-6 ? scale(vt, -Math.min(g.mu * fn / sp, 4e4)) : [0, 0, 0];
-  return { F: [ft[0], fn, ft[2]], p, vn: vw[1] };
+  return { F: addScaled(ft, n, fn), p, vn, n };
 }
 
 function log(s, sev, text) { s.events.push({ t: s.t, sev, text }); }
@@ -313,6 +324,8 @@ export function report(s, world = FLAT) {
       else if (st.c > 0.005) put(st.c > GEAR.stroke * 0.6 ? 1 : 0, `Leg ${n}: strut crushed ${(st.c * 100).toFixed(0)} of ${(GEAR.stroke * 100).toFixed(0)} cm`);
     });
     const tl = tilt(s) / DEG;
+    const sl = Math.acos(groundNormal(world, s.pos[0], s.pos[2])[1]) / DEG;
+    put(sl > 12 ? 1 : 0, `Ground slope under the lander ${sl.toFixed(1)}° (design limit 12°)`);
     put(tl > 60 ? 3 : tl > 30 ? 2 : tl > 12 ? 1 : 0, `Resting tilt ${tl.toFixed(1)}°${tl > 12 ? ': the ascent stage will leave at an angle' : ''}`);
   }
   for (const e of s.events) if (e.sev > 0 && !e.text.startsWith('LEG')) put(e.sev, e.text.charAt(0) + e.text.slice(1).toLowerCase());

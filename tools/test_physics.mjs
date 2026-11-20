@@ -4,16 +4,17 @@ import { newState, step, massProps, MOON_G, padHeight, tilt, attitude, liftoff }
 import { createDap, dapUpdate, setMode, RATE_MAX } from '../web/js/game/dap.js';
 import { DPS, GEAR, jet } from '../web/js/game/lm.js';
 import { cross, dot, qrot } from '../web/js/game/vec.js';
+import { guidance } from '../web/js/game/guidance.js';
 
 const DT = 1 / 480, DEG = Math.PI / 180;
 let fails = 0;
 const check = (name, ok, info = '') => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}  ${info}`); if (!ok) fails++; };
 const near = (a, b, tol) => Math.abs(a - b) <= tol;
 const NOSTICK = { pitch: 0, roll: 0, yaw: 0, tx: 0, ty: 0, tz: 0, rodClicks: 0, throttle: 0 };
-const fly = (s, d, inp, secs, until) => {
+const fly = (s, d, inp, secs, until, world) => {
   for (let i = 0; i < secs / DT; i++) {
     const c = dapUpdate(d, s, typeof inp === 'function' ? inp(s) : inp, DT);
-    step(s, c, DT);
+    step(s, c, DT, world);
     if (until && until(s)) break;
   }
   return s;
@@ -67,7 +68,7 @@ check('lunar gravity', near(MOON_G, 1.624, 0.002), MOON_G.toFixed(4));
   const s = newState({ alt: 500, vel: [0, 0, 0], q: attitude(0) });
   const d = createDap();
   fly(s, d, { ...NOSTICK, pitch: 1 }, 3);
-  check('full forward stick: 20°/s pitch rate', near(-s.w[1], RATE_MAX, 0.6 * DEG), `${(s.w[1] / DEG).toFixed(1)}°/s`);
+  check('full forward stick: 20°/s pitch rate', near(Math.abs(s.w[1]), RATE_MAX, 0.6 * DEG), `${(s.w[1] / DEG).toFixed(1)}°/s`);
   fly(s, d, NOSTICK, 4);
   const q1 = s.q.slice();
   fly(s, d, NOSTICK, 10);
@@ -116,9 +117,10 @@ const sevs = s => s.report?.lines.filter(l => l.sev).map(l => l.text).join(' | '
     const wantVy = -Math.max(0.6, Math.min(8, h * 0.08));
     const vxCap = Math.min(10, h * 0.06);
     const wantVx = Math.max(-vxCap, Math.min(vxCap, -s.pos[0] * 0.03));
-    const leanWant = Math.max(-20 * DEG, Math.min(20 * DEG, (wantVx - s.vel[0]) * 0.08));   // + = lean forward
+    const leanWant = Math.max(-20 * DEG, Math.min(20 * DEG, (wantVx - s.vel[0]) * 0.08));   // + = lean toward +x
     const lean = Math.asin(Math.max(-1, Math.min(1, qrot(s.q, [1, 0, 0])[0])));
-    const pitch = Math.max(-1, Math.min(1, (leanWant - lean) * 3 + s.w[1] * 1.5));
+    // forward is west (-x): stick forward leans toward -x
+    const pitch = Math.max(-1, Math.min(1, -(leanWant - lean) * 3 + s.w[1] * 1.5));
     const clicks = Math.round((wantVy - d.rod) / 0.3048);
     if (s.contactLight) s.engStop = true;
     return { ...NOSTICK, pitch, rodClicks: Math.max(-1, Math.min(1, clicks)) };
@@ -130,6 +132,47 @@ const sevs = s => s.report?.lines.filter(l => l.sev).map(l => l.text).join(' | '
   const ok = liftoff(s);
   fly(s, d, NOSTICK, 120, s => s.phase !== 'ascent');
   check('liftoff climbs through 300 m', ok && s.phase === 'climbing', `${s.phase} t=${s.t.toFixed(0)} s, alt ${s.pos[1].toFixed(0)} m, APS ${s.apsFuel.toFixed(0)} kg`);
+}
+
+// a "keyboard pilot" that only follows the flight director: arrow toward the dot (on/off),
+// one ROD click per 0.25 s, manual full throttle when told, engine stop on contact
+function keyboardPilot(start, world) {
+  const s = newState(start);
+  const d = createDap(); setMode(d, s, 'P66');
+  let nextClick = 0, advSeen = new Set();
+  fly(s, d, s => {
+    const g = guidance(s, d, world);
+    g.adv.forEach(a => advSeen.add(a.text.split(' ')[0]));
+    if (s.contactLight) s.engStop = true;
+    if (g.adv.some(a => a.text.includes('MANUAL THROTTLE')) && d.mode === 'P66') setMode(d, s, 'MANUAL');
+    if (d.mode === 'MANUAL' && g.adv.some(a => a.text.startsWith('P66 CAN TAKE OVER'))) setMode(d, s, 'P66');
+    const right = g.leanErr > 1.5 * DEG, left = g.leanErr < -1.5 * DEG;
+    const pitch = right ? -1 : left ? 1 : 0;              // right arrow leans east = stick back
+    let rodClicks = 0;
+    if (s.t >= nextClick && Math.abs(g.vertErr) > 0.2) { rodClicks = Math.sign(g.vertErr); nextClick = s.t + 0.25; }
+    s.manualThrottle = d.mode === 'MANUAL' ? 1 : 0;
+    return { ...NOSTICK, pitch, rodClicks, throttle: 1 };
+  }, 400, s => s.phase !== 'flying', world);
+  return { s, advSeen };
+}
+{
+  const { s } = keyboardPilot({}, undefined);
+  check('keyboard pilot following the flight director lands', s.phase === 'down' && s.report.worst <= 1,
+    `${s.report?.verdict} t=${s.t.toFixed(0)} s, ${Math.hypot(s.pos[0], s.pos[2]).toFixed(0)} m from target, fuel ${s.dpsFuel.toFixed(0)} kg ${sevs(s)}`);
+  const fast = keyboardPilot({ alt: 120, vel: [-8, -14, 0] }, undefined);
+  check('too fast for P66: advisory, manual throttle, survives', fast.advSeen.has('P66') && fast.s.phase === 'down' && !fast.s.crewLost,
+    `${fast.s.report?.verdict}, advisories: ${[...fast.advSeen].join(', ')} ${sevs(fast.s)}`);
+}
+
+// sloping ground: 8° hill, lands and reports the slope
+{
+  const tan8 = Math.tan(8 * DEG);
+  const hill = { height: (x, z) => -x * tan8, slope: true };
+  const s = newState({ alt: 2, vel: [0, -1.2, 0], q: attitude(0), engStop: true, throttle: 0, pos: [0, 0, 0] });
+  s.pos[1] += 2 - padHeight(s, hill);
+  fly(s, createDap(), NOSTICK, 30, s => s.phase !== 'flying', hill);
+  check('8° slope: lands, report gives the slope', s.phase === 'down' && s.report.lines.some(l => l.text.startsWith('Ground slope under the lander 8')),
+    `${s.report?.verdict}, tilt ${(tilt(s) / DEG).toFixed(1)}° ${sevs(s)}`);
 }
 
 process.exit(fails ? 1 : 0);

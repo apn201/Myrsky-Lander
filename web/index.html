@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="ai-disclosure" content="Code written with an AI coding assistant (Claude Code, Anthropic).">
 <title>Myrsky Lander</title>
+<script src="vendor/astronomy.browser.min.js"></script>
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
 <style>
   :root { --hud: #9dffb0; --warn: #ffb04a; --bad: #ff6a4d; --dim: rgba(157,255,176,.45); }
@@ -31,7 +32,20 @@
   .leg.touch { border-color: var(--hud); } .leg.warn b { background: var(--warn); } .leg.dead { border-color: var(--bad); } .leg.dead b { background: var(--bad); width: 100% !important; }
   #log { bottom: max(16px, env(safe-area-inset-bottom)); right: 16px; text-align: right; max-width: 60vw; }
   .sev0 { color: var(--hud); } .sev1 { color: #e8f08c; } .sev2 { color: var(--warn); } .sev3, .sev4 { color: var(--bad); }
-  #prompt { top: 40%; left: 0; right: 0; text-align: center; font-size: 16px; color: #8cf0ff; }
+  #adv { bottom: calc(max(16px, env(safe-area-inset-bottom)) + 200px); left: 16px; right: 16px; text-align: center; font-size: 17px; letter-spacing: .04em; }
+  #adv.sev3 { animation: blink .6s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: .35; } }
+  /* flight director: crosshair on the lander, keep the dot in the middle */
+  #fd { position: fixed; left: 50%; bottom: calc(max(16px, env(safe-area-inset-bottom)) + 110px); width: 0; height: 0; pointer-events: none; display: none; }
+  #fd .ring { position: absolute; left: -54px; top: -54px; width: 108px; height: 108px; border: 1px solid rgba(157,255,176,.35); border-radius: 50%; background: rgba(0,0,0,.25); }
+  #fd .h, #fd .v { position: absolute; background: rgba(157,255,176,.55); }
+  #fd .h { left: -64px; width: 128px; top: 0; height: 1px; } #fd .v { top: -64px; height: 128px; left: 0; width: 1px; }
+  #fd .box { position: absolute; left: -9px; top: -9px; width: 18px; height: 18px; border: 1px solid rgba(157,255,176,.7); }
+  #fd-dot { position: absolute; left: -7px; top: -7px; width: 14px; height: 14px; border-radius: 50%; background: #ffcf5a; box-shadow: 0 0 6px #ffcf5a; }
+  #fd.good #fd-dot { background: #9dffb0; box-shadow: 0 0 6px #9dffb0; }
+  #fd .arr { position: absolute; font: 16px ui-monospace, monospace; color: #ffcf5a; text-shadow: 0 0 3px #000; }
+  #fd-l { left: -86px; top: -11px; } #fd-r { left: 72px; top: -11px; } #fd-u { left: -6px; top: -90px; } #fd-d { left: -6px; top: 68px; }
+  #loading { position: fixed; inset: 0; display: grid; place-items: center; font: 14px ui-monospace, monospace; color: var(--hud); }
   #thr-bar { position: fixed; left: 16px; bottom: max(16px, env(safe-area-inset-bottom)); width: 10px; height: 26vh; border: 1px solid var(--dim); pointer-events: none; }
   #thr-cmd { position: absolute; bottom: 0; left: 0; right: 0; background: var(--hud); opacity: .7; }
   #help { bottom: max(16px, env(safe-area-inset-bottom)); left: 40px; color: var(--dim); max-width: 50vw; }
@@ -85,14 +99,17 @@
     <span>−Y</span><div class="leg"><b id="leg3"></b></div>
   </div>
 </div>
-<div id="prompt" class="hud"></div>
+<div id="adv" class="hud"></div>
+<div id="fd"><div class="ring"></div><div class="h"></div><div class="v"></div><div class="box"></div><div id="fd-dot"></div>
+  <span class="arr" id="fd-l">◀</span><span class="arr" id="fd-r">▶</span><span class="arr" id="fd-u">▲</span><span class="arr" id="fd-d">▼</span></div>
+<div id="loading">loading the Apollo 12 landing site…</div>
 <div id="log" class="hud"></div>
 <div id="thr-bar"><div id="thr-cmd"></div></div>
 <div id="help" class="hud">
-  <span class="keys">←→ tilt · ↑↓ descent rate (P66, 1 ft/s per click) · space engine stop · M manual throttle · enter liftoff · R restart</span>
-  <span class="touch">slide sideways to tilt · slide up/down to click the descent rate</span>
+  <span class="keys">keep the dot in the crosshair: ←→ lean · ↑↓ descent rate (1 ft/s per click) · space engine stop · M manual throttle · Z zoom · R restart</span>
+  <span class="touch">keep the dot in the crosshair: slide sideways to lean, up/down for descent rate</span>
 </div>
-<div id="touch-buttons"><button id="btn-stop">ENG STOP</button><button id="btn-mode">MODE</button></div>
+<div id="touch-buttons"><button id="btn-stop">ENG STOP</button><button id="btn-mode">MODE</button><button id="btn-zoom">ZOOM</button></div>
 
 <div id="msg" hidden><div>
   <h2 id="msg-title"></h2>

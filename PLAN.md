@@ -10,12 +10,15 @@
 
 ### Prototype status (20 Nov 2026)
 
-6-DOF rigid body (`physics.js`), autopilot (`dap.js`), vehicle data (`lm.js`), checked by `node tools/test_physics.mjs` (20 checks).
+6-DOF rigid body (`physics.js`), autopilot (`dap.js`), vehicle data (`lm.js`), checked by `node tools/test_physics.mjs` (23 checks, including a keyboard-style pilot that only follows the flight director, a too-fast start that needs manual full throttle, and an 8° slope).
 - Real values from Luminary 131 (Apollo 13 LM software, in the Space pilot project): descent engine exhaust velocity 2,955.9 m/s and FTP thrust 43,455 N, throttle lag 0.2 s, ascent exhaust velocity 3,030 m/s, 14 ms minimum jet pulse, the jet table for U/V rotation and X translation.
 - 16 RCS jets at their quads; torque about the moving centre of mass; inertia from the mass layout.
 - Rate command / attitude hold, P66 rate of descent (1 ft/s per click) or manual throttle, trim gimbal.
 - Legs: crushable stroke (no spring back), footpad friction, bottoming and failure; hull contacts damage the nozzle, descent stage, RCS quads, cabin; crew g-load. Result is a damage report, then liftoff with whatever survived.
 - Played in the vertical plane: ←/→ tilt, ↑/↓ ROD clicks. Crew assist nulls cross-range drift with RCS translation.
+- Real ground: Myrsky's LROC 2 m height model and orthophoto (SLDEM beyond), with terrain shadows; the legs land on the same heights and slopes. World axes are Myrsky's; you fly west toward Intrepid's spot as Apollo 12 did, with the Sun where it was at touchdown.
+- Lander: the crew photo cut-out (AS12-48-7100), relit; NASA model casts the shadow. At liftoff the photo splits into descent and ascent stage. Leg compression and broken legs are not drawn yet (the photo is rigid).
+- Guidance (`guidance.js`): flight director (keep the dot in the crosshair), advisories incl. "P66 cannot stop you — manual throttle", zoom levels (Z).
 
 Simplifications and estimates still open: leg truss modelled as one vertical crush stroke per leg (crush load, break loads, ground stiffness are estimates); quad height, gimbal pivot and nozzle clearance are estimates; side-jet numbering is ours; TAUROD 1.5 s and ROD scale are pad-loaded values we have not found yet; Luminary's failure-reconfiguration jet logic is not modelled.
 
@@ -26,8 +29,8 @@ Simplifications and estimates still open: leg truss modelled as one vertical cru
 
 ## Look
 
-- Myrsky's terrain, Sun, shadows and exposure.
-- Real 3D lander (NASA model in `data/models/`); Myrsky's photo cut-outs only work for a lander standing still.
+- Myrsky's terrain, Sun, shadows and exposure (done).
+- Photo cut-out lander (done). Next: draw leg compression and broken legs over the photo; descent stage damage.
 - Camera option: view out the LM window in the style of the 16 mm Apollo film camera.
 - Exhaust blowing dust sideways near the ground.
 
