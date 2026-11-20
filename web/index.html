@@ -5,6 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="ai-disclosure" content="Code written with an AI coding assistant (Claude Code, Anthropic).">
 <title>Myrsky Lander</title>
+<script>
+  // If start-up fails, say so on the loading screen instead of hanging on "loading".
+  (function () {
+    const say = (msg) => { const el = document.getElementById('loading'); if (el) { el.style.whiteSpace = 'pre-wrap'; el.style.padding = '16px'; el.style.textAlign = 'center'; el.textContent = msg; } };
+    if (location.protocol === 'file:') {
+      addEventListener('DOMContentLoaded', () => say('This page has to be opened through a web server, not as a file.\n\nIn the Myrsky-Lander folder run:\n  python tools/devserver.py 8141\nthen open http://localhost:8141'));
+    }
+    addEventListener('error', (e) => say('Start-up failed:\n' + (e.message || e.error || 'unknown error') + '\n\nReload the page; if it keeps happening, tell the developer.'));
+    addEventListener('unhandledrejection', (e) => say('Start-up failed:\n' + (e.reason && (e.reason.message || e.reason)) + '\n\nReload the page; if it keeps happening, tell the developer.'));
+  })();
+</script>
 <script src="vendor/astronomy.browser.min.js"></script>
 <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
 <style>
