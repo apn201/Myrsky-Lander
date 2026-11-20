@@ -1,0 +1,51 @@
+object,part,dimension,value_m,original,source,confidence,note
+lander,whole LM,height,6.99,22 ft 11 in,Apollo 12 Press Kit p.58,high,with ascent stage
+lander,whole LM,width across landing gear (diagonal),9.45,31 ft,Apollo 12 Press Kit p.58,high,
+lander,descent stage,height,3.23,10 ft 7 in,Apollo 12 Press Kit p.59,high,includes legs
+lander,descent stage,diameter,4.29,14 ft 1 in,Apollo 12 Press Kit p.59,high,
+lander,ascent stage,height,3.76,12 ft 4 in,Apollo 12 Press Kit p.58,high,
+lander,ascent stage,diameter,4.29,14 ft 1 in,Apollo 12 Press Kit p.58,high,
+lander,ascent stage crew compartment,diameter,2.35,92 in,Apollo 12 Press Kit p.58,high,
+rtg_fuel_cask,cask (stays on the descent stage),length x diameter,0.58 x 0.20,23 x 8 in,Apollo 12 Press Kit; ALSEP-MT-03 table 2-2 (scan reads 2.3 in),high,graphite cask on its support beside the SEQ bay
+rtg_fuel_cask,cask support,height x depth,0.73 x 0.31,28.86 x 12.25 in,ALSEP-MT-03 table 2-1,medium,OCR order of H/D uncertain
+alsep_rtg,SNAP-27 generator,height,0.46,18 in (18.12 in),Press Kit; ALSEP-MT-03 table 2-2,high,
+alsep_rtg,SNAP-27 generator,diameter including fins,0.41,16 in,Press Kit; ALSEP-MT-03 table 2-2,high,eight fins
+alsep_rtg,fuel capsule,length x diameter,0.43 x 0.066,16.92 x 2.6 in,ALSEP-MT-03 table 2-2,high,inside the generator
+alsep_cs,central station base (subpackage 1 structure),L x W x H,0.68 x 0.70 x 0.17,26.75 x 27.37 x 6.87 in,ALSEP-MT-03 table 2-1,medium,stowed. Deployed: sunshield and side curtains raised; height of raised sunshield not found. Estimate from AS12-46-6814/6815.
+alsep_cs,antenna (helix),length x diameter,0.58 x 0.038,23 x 1.5 in,ALSEP-MT-03 2-28,high,5-inch ground plane with 2-inch skirt at the base. Sits on the carry-bar mast.
+alsep_cs,whole package,mass,25 kg,,PDS a12a_alsep.txt,high,
+alsep_pse,sensor (without insulation),diameter x height,0.23 x 0.29,23 x 29 cm,Preliminary Science Report ch. 3,high,
+alsep_pse,sensor with stool and shroud (stowed),height x diameter,0.39 x 0.30,15.25 x 11.75 in,ALSEP-MT-03 PSE table,high,
+alsep_pse,thermal skirt (laid on the ground),diameter,1.5,about 75 cm radius,Wikipedia Apollo 14 PSE,low,Apollo 14 figure; Apollo 12 assumed the same. Check AS12-47-6916.
+alsep_lsm,magnetometer deployed,height,1.02,40 in,ALSEP-MT-03 table 2-18; Press Kit,high,
+alsep_lsm,magnetometer deployed,distance between sensor heads,1.52,60 in,ALSEP-MT-03 table 2-18; Press Kit,high,
+alsep_lsm,support arms (booms),length,1.00,100 cm,Preliminary Science Report table 4-1,high,
+alsep_lsm,electronics/gimbal-flip box,L x W x H,0.24 x 0.27 x 0.13,9.5 x 10.5 x 5.25 in,ALSEP-MT-03 2-80,high,
+alsep_sws,solar wind spectrometer deployed,L x W x H,0.28 x 0.28 x 0.35,11.0 x 11.1 x 13.6 in,ALSEP-MT-03 table 2-20,high,
+alsep_side,ion detector (SIDE),height x width x depth,0.39 x 0.11 x 0.33,15.25 x 4.5 x 13 in,ALSEP-MT-03 table 2-21,high,
+alsep_side,ion detector deployed,top above ground,0.51,20 in,Preliminary Science Report p.85,high,on legs with a wire-mesh ground screen
+alsep_ccig,cold cathode gauge,size,,,not found,,small cylinder; estimate from AS12-47-6923
+sband,erectable dish,diameter,3.0,3 m (10 ft),IEEE Spectrum; Smithsonian,high,
+sband,tripod,height,2.0,about 2 m,Apollo 14 Lunar Surface Journal,medium,Apollo 14 figure; same hardware
+sband,stowed,size,0.25 x 1.00,25 x 100 cm,IEEE Spectrum,medium,
+flag,cloth,width x height,1.52 x 0.91,3 x 5 ft,Wikipedia Lunar Flag Assembly; JSC history,high,nylon
+flag,pole and crossbar,tube diameter,0.025,1 in,JSC history; NASM,high,anodised aluminium
+flag,pole,depth in ground (target),0.46,18 in red ring,Wikipedia Lunar Flag Assembly,medium,
+flag,pole,height above ground,,,not found,,estimate from AS12-47-6897 (Pete as scale)
+swc,pole,length extended x diameter,1.5 x 0.04,,Preliminary Science Report ch. 8,high,
+swc,foil,exposed area,0.30 x 1.30,30 x 130 cm,Preliminary Science Report ch. 8,high,foil 30 x 140 cm in total
+tv_camera,Westinghouse colour camera,mass,5.4 kg,12 lb,Apollo 12 Press Kit,high,size not found; estimate from AS12-46-6756
+tv_camera,tripod,height to camera,1.3-1.5,,estimate from AS12-46-6756,low,
+surveyor3,whole spacecraft,height including mast,3.0,10 ft,Smithsonian NASM; Surveyor 3 Wikipedia,high,
+surveyor3,whole spacecraft,width across footpads,4.3,14 ft,Smithsonian NASM,high,
+surveyor3,footpad,diameter x height,0.30 x 0.23,11.75 x 9 in,Smithsonian NASM,high,
+surveyor3,TV camera,mass,7.7 kg,17 lb,Apollo 12 Press Kit,high,
+surveyor3,layout,drawing,,,Surveyor III Mission Report JPL TR 32-1177 Appendix B (PDF pages 182-184),high,no dimension labels; scale with the overall height and width
+surveyor_crater,crater,diameter,200,200 m (650 ft),Preliminary Science Report; Press Kit,high,
+surveyor_crater,crater,depth,15,50 ft,Apollo 12 Press Kit,medium,
+surveyor_crater,Surveyor 3 position,down the slope,46,150 ft down a 14 degree slope,Apollo 12 Press Kit,medium,
+sharp_crater,crater,diameter x depth,14 x 3,,Preliminary Science Report ch. 10,high,
+block_crater,crater,diameter x depth,13 x 3,,Preliminary Science Report ch. 10,high,
+rocks,sample 12004,size,0.09 x 0.08 x 0.04,585 g,Preliminary Science Report ch. 10,high,typical hand sample
+rocks,sample 12021,size,0.14 x 0.12 x 0.08,1876 g,Preliminary Science Report ch. 10,high,
+rocks,boulder at Bench Crater,size,0.5,1/2 m,journal caption AS12-48-7062,medium,with a soil fillet

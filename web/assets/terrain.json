@@ -1,0 +1,21 @@
+{
+ "grid_centre_en": [
+  60.0,
+  -45.0
+ ],
+ "half_m": 1024.0,
+ "n": 1024,
+ "cell_m": 2.0,
+ "units": "cm, int16, row 0 north",
+ "wide": {
+  "n": 256,
+  "half_m": 12000.0,
+  "units": "dm"
+ },
+ "ortho_2010_sun": {
+  "incidence": 88,
+  "azimuth": 272,
+  "corr": 0.6
+ },
+ "lander_height_vs_sphere_m": -1422.021489181873
+}

@@ -1,0 +1,10 @@
+# big source models, see data/SOURCES.md
+source/
+# local tooling
+.claude/
+__pycache__/
+*.pyc
+node_modules/
+.DS_Store
+Thumbs.db
+tools/shots/
