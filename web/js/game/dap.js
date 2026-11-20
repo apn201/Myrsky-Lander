@@ -67,6 +67,10 @@ export function dapUpdate(d, s, inp, dt) {
     else { a.dir = 0; a.t = 0; }
   });
 
+  // on the ground with the engine stopped the crew turned attitude hold off: the jets fire only on
+  // the player's own stick input (otherwise the hold fights the slope and fires jets after landing)
+  const parked = (s.stage === 'full' && s.firstTouch && (s.engStop || s.throttle === 0)) || s.phase === 'down' || s.phase === 'lost';
+  if (parked && !active) d.axis.forEach(a => { a.dir = 0; a.t = 0; });
   const on = new Set();
   const addAll = l => l.forEach(n => on.add(n));
   const [dX, dY, dZ] = d.axis.map(a => a.dir);

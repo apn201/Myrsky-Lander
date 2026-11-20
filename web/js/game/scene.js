@@ -365,7 +365,10 @@ function buildFx() {
       for (let n = 1; n <= 16; n++) puffs[n].visible = s.jetsOn[n];
       dps.visible = s.stage === 'full';
       dps.material.opacity = Math.min(0.6, s.throttle);
-      aps.material.opacity = s.stage === 'ascent' && s.apsOn && s.apsFuel > 0 ? 0.6 : 0;
+      // ascent engine: a faint glow, and a short bright flash in the first moments after ignition
+      const sinceIgn = s.ignition != null ? s.t - s.ignition : 99;
+      aps.material.opacity = s.stage === 'ascent' && s.apsOn && s.apsFuel > 0 ? 0.35 + 0.9 * Math.max(0, 1 - sinceIgn / 0.6) : 0;
+      aps.scale.setScalar(1 + 3 * Math.max(0, 1 - sinceIgn / 0.6));
       legFx.forEach((L, i) => {
         const st = s.legs[i], full = s.stage === 'full';
         const j = new THREE.Vector3(...padJointBody(L.leg, st));

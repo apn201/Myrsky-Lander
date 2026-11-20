@@ -396,6 +396,23 @@ function stage(s, inFlight) {
   s.apsOn = true; s.throttle = 0;
   s.phase = 'ascent'; s.settle = 0; s.report = null;
   s.touching = new Set();
+  s.ignition = s.t;
+  if (!inFlight) {
+    // the ascent engine's exhaust is almost invisible in vacuum; what the Apollo 15-17 TV showed at
+    // liftoff was a burst of shredded foil and insulation blown off the descent stage
+    let seed = Math.floor(s.t * 977) + 3;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const top = add(origin, qrot(s.q, [0.1, 0, 0]));
+    s.debris = (s.debris || []).concat(Array.from({ length: 60 }, () => {
+      const a = rnd() * Math.PI * 2, el = 0.05 + rnd() * 0.6, sp = 3 + rnd() * 14;
+      return {
+        kind: 'foil', size: 0.08 + rnd() * 0.3,
+        p: add(top, [Math.cos(a) * (0.5 + rnd() * 1.6), rnd() * 0.3, Math.sin(a) * (0.5 + rnd() * 1.6)]),
+        v: [Math.cos(a) * Math.cos(el) * sp, Math.sin(el) * sp, Math.sin(a) * Math.cos(el) * sp],
+        ax: [rnd() - 0.5, rnd() - 0.5, rnd() - 0.5], ang: rnd() * 6.28, spin: (rnd() - 0.5) * 30, rest: false,
+      };
+    }));
+  }
   log(s, inFlight ? 2 : 0, inFlight ? 'ABORT STAGE: descent stage jettisoned, ascent engine on' : 'ABORT STAGE / ASCENT ENGINE ON');
   return true;
 }
