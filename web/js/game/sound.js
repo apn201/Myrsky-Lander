@@ -91,6 +91,32 @@ export function createSound() {
     busyUntil = t0 + (b - a) + 0.15;
   }
 
+  function tone(freq, t0, dur, vol) {
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.value = freq; g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(vol, t0 + 0.01); g.gain.setValueAtTime(vol, t0 + dur - 0.01); g.gain.linearRampToValueAtTime(0, t0 + dur);
+    o.connect(g); g.connect(master); o.start(t0); o.stop(t0 + dur + 0.02);
+  }
+  // radio static: band-passed noise (300-3000 Hz voice channel) for dur seconds, then a squelch tail;
+  // Houston's transmissions keyed with quindar tones (2525 Hz in, 2475 Hz out, 250 ms)
+  function radio(dur, houston) {
+    if (!ctx || !on) return;
+    const t = ctx.currentTime;
+    if (houston) tone(2525, t, 0.25, 0.09);
+    const n = Math.ceil(ctx.sampleRate * (dur + 0.3));
+    const b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 + 0.6 * Math.sin(i / 900));
+    const src = ctx.createBufferSource(); src.buffer = b;
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 300;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3000;
+    const g = ctx.createGain(), t1 = t + (houston ? 0.25 : 0);
+    g.gain.setValueAtTime(0, t1); g.gain.linearRampToValueAtTime(0.05, t1 + 0.03);
+    g.gain.setValueAtTime(0.05, t1 + dur); g.gain.linearRampToValueAtTime(0.16, t1 + dur + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t1 + dur + 0.25);
+    src.connect(hp); hp.connect(lp); lp.connect(g); g.connect(master); src.start(t1);
+    if (houston) tone(2475, t1 + dur + 0.05, 0.25, 0.09);
+  }
+
   // the player's own callouts (their real numbers): radio static and a subtitle, no voice
   let subtitle = null;
   function say(text, opts = {}) {

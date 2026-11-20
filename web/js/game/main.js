@@ -96,6 +96,10 @@ window.game = {
 };
 
 function frame(now) {
+  requestAnimationFrame(frame);          // first, so an error below can never stop the game loop
+  try { tick(now); } catch (e) { console.error(e); }
+}
+function tick(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   const raw = input.read(dt);
@@ -136,7 +140,6 @@ function frame(now) {
   const scr = view.update(s, g.h, dt);
   lastDust = scr.dust || 0;
   hud(s, g, scr);
-  requestAnimationFrame(frame);
 }
 
 function hud(s, g, scr) {
