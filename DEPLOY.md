@@ -15,6 +15,7 @@ Rules:
 - Do not change, disable or restart any other site (the Myrsky / Ocean of Storms site on this server must stay as it is). Use `systemctl reload httpd`, never restart.
 - Do not install packages, open firewall ports or change SELinux policy without asking me first.
 - Stop and report if any step fails.
+- Run every command that writes under `/var/www`, `/etc/httpd` or `/usr/local/bin` (and `restorecon`, `systemctl`, `certbot`) with `sudo`.
 
 Steps:
 1. Look first, change nothing: show the output of `cat /etc/rocky-release`, `systemctl is-active httpd`, `ls /etc/httpd/conf.d/`, `httpd -M | grep -E "mime|deflate|headers|ssl|rewrite"`, `which git rsync certbot`, and `ls -la /var/www/myrsky-lander` (it should not exist yet; if it exists, ask me before overwriting).
