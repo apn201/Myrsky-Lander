@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="ai-disclosure" content="Code written with an AI coding assistant (Claude Code, Anthropic).">
+<title>Myrsky Lander</title>
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+<style>
+  :root { --hud: #9dffb0; --warn: #ff7a5c; --dim: rgba(157,255,176,.45); }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
+  #view { display: block; width: 100vw; height: 100vh; height: 100dvh; }
+  .hud { position: fixed; font: 13px/1.35 ui-monospace, Menlo, Consolas, monospace; color: var(--hud); text-shadow: 0 0 4px #000, 0 0 2px #000; pointer-events: none; }
+  #readout { top: max(12px, env(safe-area-inset-top)); left: 16px; display: grid; grid-template-columns: auto auto auto; gap: 0 10px; }
+  #readout span:nth-child(3n+1) { color: var(--dim); }
+  #readout b { font-weight: normal; text-align: right; min-width: 6ch; }
+  .warn { color: var(--warn) !important; }
+  #status { top: max(12px, env(safe-area-inset-top)); right: 16px; text-align: right; }
+  #contact { opacity: .25; border: 1px solid currentColor; padding: 2px 6px; display: inline-block; }
+  #contact.on { opacity: 1; color: #000; background: #8cf0ff; border-color: #8cf0ff; text-shadow: none; }
+  #bingo { color: var(--warn); margin-top: 6px; min-height: 1.3em; }
+  #thr-bar { position: fixed; left: 16px; bottom: max(16px, env(safe-area-inset-bottom)); width: 10px; height: 30vh; border: 1px solid var(--dim); pointer-events: none; }
+  #thr-cmd { position: absolute; bottom: 0; left: 0; right: 0; background: var(--hud); opacity: .7; }
+  #help { bottom: max(16px, env(safe-area-inset-bottom)); left: 40px; color: var(--dim); }
+  #msg { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,.35); cursor: pointer; }
+  #msg[hidden] { display: none; }
+  #msg div { font: 15px/1.5 ui-monospace, Menlo, Consolas, monospace; color: var(--hud); text-align: center; max-width: min(92vw, 560px); padding: 0 16px; }
+  #msg h2 { font-size: 22px; letter-spacing: .08em; margin: 0 0 10px; }
+  /* touch controls: only on touch screens */
+  #throttle-zone { position: fixed; left: 0; top: 0; bottom: 0; width: 50vw; }
+  #rot { position: fixed; right: 16px; bottom: max(16px, env(safe-area-inset-bottom)); display: none; gap: 14px; }
+  #rot button { width: 72px; height: 72px; border-radius: 50%; border: 1px solid var(--dim); background: rgba(0,0,0,.35); color: var(--hud); font-size: 28px; }
+  #rot button.down { background: rgba(157,255,176,.25); }
+  @media (pointer: coarse) { #rot { display: flex; } #help .keys { display: none; } #help { bottom: calc(max(16px, env(safe-area-inset-bottom)) + 84px); } }
+  @media (pointer: fine) { #help .touch { display: none; } #throttle-zone { display: none; } }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="throttle-zone"></div>
+
+<div id="readout" class="hud">
+  <span>ALT</span><b id="alt">0</b><span>m</span>
+  <span>V/S</span><b id="vs">0</b><span>m/s</span>
+  <span>H/S</span><b id="hs">0</b><span>m/s</span>
+  <span>THR</span><b id="thr">0</b><span>%</span>
+  <span>TILT</span><b id="pitch">0</b><span>°</span>
+  <span>FUEL</span><b id="fuel">0</b><span>kg</span>
+  <span>HOVER</span><b id="sec">0</b><span>s</span>
+  <span>RANGE</span><b id="dist">0</b><span>m</span>
+  <span>T</span><b id="met">0</b><span>s</span>
+</div>
+<div id="status" class="hud"><div id="contact">CONTACT LIGHT</div><div id="bingo"></div></div>
+<div id="thr-bar"><div id="thr-cmd"></div></div>
+<div id="help" class="hud">
+  <span class="keys">↑↓ throttle · ←→ tilt · space engine off · R restart · P pause</span>
+  <span class="touch">left side: drag for throttle · right: tilt</span>
+</div>
+<div id="rot"><button id="rot-left" aria-label="tilt left">◀</button><button id="rot-right" aria-label="tilt right">▶</button></div>
+
+<div id="msg" hidden><div><h2 id="msg-title"></h2><p id="msg-body"></p><p style="opacity:.6">tap or press R to fly again</p></div></div>
+
+<script type="module" src="js/game/main.js"></script>
+</body>
+</html>
