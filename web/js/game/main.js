@@ -108,7 +108,18 @@ function tick(now) {
   // LM's forward direction: right arrow = lean west = stick forward
   const inp = { ...raw };
   s.manualThrottle = raw.throttle;
-  if (!paused) {
+  if (!paused && s.phase === 'climbing') {
+    // the flight is over once the ascent stage climbs through 300 m: no more physics, crash checks
+    // or controls. It keeps climbing out of the picture and the engine fades after a few seconds.
+    s.climbAt ??= s.t;
+    s.t += dt;
+    s.vel[1] += 1.6 * dt;
+    for (let i = 0; i < 3; i++) s.pos[i] += s.vel[i] * dt;
+    s.w = [0, 0, 0];
+    s.jetsOn.fill(false);
+    if (s.t - s.climbAt > 8) s.apsOn = false;
+    acc = 0;
+  } else if (!paused) {
     acc += dt;
     let clicks = inp.rodClicks;
     while (acc >= DT) {

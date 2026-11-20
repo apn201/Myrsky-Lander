@@ -4,6 +4,33 @@ An arcade lunar lander set at the real Apollo 12 site in the Ocean of Storms. Th
 
 Built on [Myrsky](https://github.com/apn201/Myrsky) ("Webcam: Ocean of Storms", NASA Space Apps 2026). The two repos are separate so the judged Myrsky site stays untouched. The code and assets here were copied from Myrsky's tag `spaceapps-2026-judging`.
 
+## Play
+
+Serve `web/` from any static web server (it uses ES modules, so `file://` does not work), for example `python -m http.server -d web`, and open the page.
+
+| Key | Does |
+|---|---|
+| ← → | lean the lander (RCS jets; let go and the attitude holds) |
+| ↑ ↓ | P66: rate of descent, 1 ft/s per click. MANUAL: throttle |
+| M | P66 auto-throttle or manual throttle |
+| Space | descent engine stop (ascent engine on/off after staging) |
+| Enter | abort stage in flight, liftoff after landing |
+| A | acknowledge the master alarm |
+| 1–4 | isolate RCS quad A–D |
+| Z, C, G | zoom, window camera, picture look (TV, film, clean) |
+| V, P, R, N | sound, pause, restart, scenario menu |
+
+On a touch screen, put a finger anywhere and slide: sideways leans, up and down clicks the rate of descent. The on-screen buttons do the rest.
+
+Scenarios: the Apollo 12 landing, the Apollo 11 program alarms, a stuck RCS jet, a lost landing radar, a stuck throttle and a descent engine failure. Keep the guidance dot in the crosshair, land softly on clear ground, and lift off again.
+
+Physics tests: `node tools/test_physics.mjs`.
+
+## Sound credits
+
+- Real Apollo 11 landing audio: NASA (public domain), see `web/assets/audio/README.md`.
+- Radio chatter: synthesized offline with [Piper](https://github.com/rhasspy/piper) by `tools/make_radio_chatter.py`. Crew voice `en_US-joe-medium`; Houston voice `en_US-arctic-medium`, speaker rms, from the CMU ARCTIC speech database (Carnegie Mellon University).
+
 ## What came from Myrsky
 
 | Here | What it is |
