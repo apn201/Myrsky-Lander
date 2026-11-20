@@ -166,7 +166,7 @@ export async function createScene(canvas) {
   };
 
   const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
-  let first = true, zoom = 1, camMode = 'chase';
+  let first = true, zoom = 1, camMode = 'chase', dustAmt = 0;
   const ZOOMS = [0.45, 1, 2.2];
   const tmp = new THREE.Vector3();
 
@@ -190,7 +190,7 @@ export async function createScene(canvas) {
         const full = s.stage === 'full';
         const noz = bodyToWorld(ascentPose, full ? [DPS.exit, 0, 0] : [APS.point[0] - 0.3, 0, 0]);
         const thrust = full ? s.throttle * DPS.fRated : (s.apsOn && s.apsFuel > 0 ? APS.thrust * 0.5 : 0);
-        dust.update(noz, thrust, Math.min(dt, 0.05), performance.now() / 1000, s.burst ?? null);
+        dustAmt = dust.update(noz, thrust, Math.min(dt, 0.05), performance.now() / 1000, s.burst ?? null);
       }
       const dO = s.stage === 'full' ? null : s.descentPose.origin;
       if (s.stage === 'full') { const b = bodyToWorld(ascentPose, [PAD_BOTTOM_X, 0, 0]); placeAO(aoD, b.x, b.z, b.y, 5); aoA.material.opacity = 0; }
@@ -216,7 +216,7 @@ export async function createScene(canvas) {
         camera.up.set(0, 1, 0);
         first = true;
         tmp.set(s.pos[0], s.pos[1], s.pos[2]).project(camera);
-        return { x: 0, y: 0, zoom };
+        return { x: 0, y: 0, zoom, dust: dustAmt };
       }
       if (camera.fov !== 32) { camera.fov = 32; camera.updateProjectionMatrix(); }
       // side view from the north, zoomed out arcade-style: lander high in the frame, ground below
@@ -236,7 +236,7 @@ export async function createScene(canvas) {
 
       // screen position of the lander, for the flight director overlay
       tmp.set(s.pos[0], s.pos[1], s.pos[2]).project(camera);
-      return { x: (tmp.x + 1) / 2 * canvas.clientWidth, y: (1 - tmp.y) / 2 * canvas.clientHeight, zoom };
+      return { x: (tmp.x + 1) / 2 * canvas.clientWidth, y: (1 - tmp.y) / 2 * canvas.clientHeight, zoom, dust: dustAmt };
     },
     cycleZoom() { zoom = (zoom + 1) % ZOOMS.length; },
     toggleCamera() { camMode = camMode === 'chase' ? 'window' : 'chase'; return camMode; },

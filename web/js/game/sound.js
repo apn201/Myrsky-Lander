@@ -3,10 +3,10 @@
 //   RCS:     sharp bangs when jets fire (crews said they were loud)
 //   alarm:   master alarm tone until acknowledged
 //   thuds:   touchdown and impacts
-//   radio:   each callout is a band-passed static burst with a squelch tail; Houston's lines are keyed
-//            with quindar tones (2525 Hz in, 2475 Hz out, 250 ms), as on the Apollo air-to-ground loops
-//   voice:   speech synthesis only with an English male voice (otherwise silent; the words are always
-//            shown as subtitles). Browser speech cannot be filtered, so it is never "radio" itself.
+//   tape:    real Apollo 11 air-to-ground recording for events: "Contact light", "Engine stop",
+//            "60 seconds", "Picking up some dust", "The Eagle has landed" and Houston's reply
+//   radio:   the player's own callouts (their real height and rate) are subtitles with a band-passed
+//            static burst; Houston's lines are keyed with quindar tones (2525 Hz in, 2475 Hz out)
 // Code written with an AI assistant (Claude Code, Anthropic), 20 Nov 2026.
 
 export function createSound() {
@@ -34,6 +34,7 @@ export function createSound() {
     alarmGain = ctx.createGain(); alarmGain.gain.value = 0;
     const alp = ctx.createBiquadFilter(); alp.type = 'lowpass'; alp.frequency.value = 2400;
     alarmOsc.connect(alp); alp.connect(alarmGain); alarmGain.connect(master); alarmOsc.start();
+    decodeTape();
   }
   for (const ev of ['keydown', 'pointerdown']) addEventListener(ev, start, { once: false });
 
@@ -48,60 +49,51 @@ export function createSound() {
     src.connect(f); f.connect(g); g.connect(master); src.start(t);
   }
 
-  // an English male voice, or none
-  let voice = null;
-  const MALE = /david|mark|guy|daniel|george|ryan|james|thomas|alex|fred|eric|roger|christopher|andrew|brian|male/i;
-  const pick = () => {
-    const vs = window.speechSynthesis?.getVoices() ?? [];
-    voice = vs.find(v => /^en[-_](US|GB|AU)/i.test(v.lang) && MALE.test(v.name) && !/female/i.test(v.name)) ?? null;
+  // Real Apollo 11 air-to-ground recording (NASA, see assets/audio/README.md): event cues are played
+  // from it. Offsets found with a speech recognizer and checked against the words.
+  const CUES = {
+    altvel:  { t: [0.00, 1.75],    who: 'ALDRIN', text: 'Altitude-velocity light.' },
+    s60:     { t: [51.85, 53.15],  who: 'HOUSTON', text: '60 seconds.' },
+    dust:    { t: [70.15, 71.35],  who: 'ALDRIN', text: 'Picking up some dust.' },
+    s30:     { t: [83.05, 84.15],  who: 'HOUSTON', text: '30 seconds.' },
+    contact: { t: [92.30, 93.75],  who: 'ALDRIN', text: 'Contact light.' },
+    engstop: { t: [96.55, 97.75],  who: 'ALDRIN', text: 'Okay. Engine stop.' },
+    eagle:   { t: [98.95, 104.75], who: 'ARMSTRONG', text: 'Houston, Tranquility Base here. The Eagle has landed.' },
+    blue:    { t: [105.40, 112.50], who: 'HOUSTON', text: "Roger, Twan— Tranquility, we copy you on the ground. You got a bunch of guys about to turn blue. We're breathing again. Thanks a lot." },
   };
-  if (window.speechSynthesis) { pick(); speechSynthesis.onvoiceschanged = pick; }
-
-  function tone(freq, t0, dur, vol) {
-    const o = ctx.createOscillator(), g = ctx.createGain();
-    o.frequency.value = freq; g.gain.setValueAtTime(0, t0);
-    g.gain.linearRampToValueAtTime(vol, t0 + 0.01); g.gain.setValueAtTime(vol, t0 + dur - 0.01); g.gain.linearRampToValueAtTime(0, t0 + dur);
-    o.connect(g); g.connect(master); o.start(t0); o.stop(t0 + dur + 0.02);
-  }
-  // radio static: band-passed noise (300-3000 Hz voice channel) for dur seconds, then a squelch tail
-  function radio(dur, houston) {
-    if (!ctx || !on) return;
-    const t = ctx.currentTime;
-    if (houston) tone(2525, t, 0.25, 0.09);
-    const n = Math.ceil(ctx.sampleRate * (dur + 0.3));
-    const b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0);
-    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 + 0.6 * Math.sin(i / 900));
-    const src = ctx.createBufferSource(); src.buffer = b;
-    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 300;
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3000;
-    const g = ctx.createGain(), t1 = t + (houston ? 0.25 : 0);
-    g.gain.setValueAtTime(0, t1); g.gain.linearRampToValueAtTime(0.05, t1 + 0.03);
-    g.gain.setValueAtTime(0.05, t1 + dur); g.gain.linearRampToValueAtTime(0.16, t1 + dur + 0.02);   // squelch tail
-    g.gain.exponentialRampToValueAtTime(0.0001, t1 + dur + 0.25);
-    src.connect(hp); hp.connect(lp); lp.connect(g); g.connect(master); src.start(t1);
-    if (houston) tone(2475, t1 + dur + 0.05, 0.25, 0.09);
+  let tape = null;
+  fetch('assets/audio/a11_landing.wav').then(r => r.arrayBuffer()).then(b => { tapeBytes = b; decodeTape(); }).catch(() => {});
+  let tapeBytes = null;
+  function decodeTape() { if (ctx && tapeBytes && !tape) ctx.decodeAudioData(tapeBytes.slice(0), d => { tape = d; }); }
+  let busyUntil = 0;
+  function cue(name) {
+    const c = CUES[name];
+    subtitle?.(`${c.who} (APOLLO 11 RECORDING): ${c.text}`);
+    decodeTape();
+    if (!ctx || !on || !tape) return;
+    const t0 = Math.max(ctx.currentTime, busyUntil), [a, b] = c.t;
+    const src = ctx.createBufferSource(); src.buffer = tape;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(1.6, t0 + 0.02);
+    g.gain.setValueAtTime(1.6, t0 + (b - a) - 0.03); g.gain.linearRampToValueAtTime(0, t0 + (b - a));
+    src.connect(g); g.connect(master); src.start(t0, a, b - a);
+    busyUntil = t0 + (b - a) + 0.15;
   }
 
-  let speaking = 0, subtitle = null;
+  // the player's own callouts (their real numbers): radio static and a subtitle, no voice
+  let subtitle = null;
   function say(text, opts = {}) {
     const houston = !!opts.houston;
     subtitle?.(houston ? `HOUSTON: ${text}` : text);
-    const dur = Math.max(1.0, text.split(' ').length * 0.32);
-    radio(dur, houston);
-    if (!on || !voice) return;
-    if (speechSynthesis.speaking && performance.now() - speaking < 4000) speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.voice = voice; u.lang = voice.lang; u.rate = 1.12; u.pitch = 0.85; u.volume = 0.85;
-    speaking = performance.now();
-    setTimeout(() => speechSynthesis.speak(u), houston ? 280 : 30);
+    radio(Math.max(0.8, text.split(' ').length * 0.3), houston);
   }
 
   return {
     get on() { return on; },
-    toggle() { on = !on; if (master) master.gain.value = on ? 0.8 : 0; if (!on) speechSynthesis?.cancel(); return on; },
-    say,
+    toggle() { on = !on; if (master) master.gain.value = on ? 0.8 : 0; return on; },
+    say, cue,
+    get ready() { return { ctx: ctx ? ctx.state : null, tape: tape ? tape.duration : null }; },
     onSubtitle(fn) { subtitle = fn; },
-    get voiceName() { return voice ? voice.name : null; },
     thud(v) { burst(70, 0.7, 0.35 + Math.min(0.6, v * 0.08), Math.min(1.5, 0.3 + v * 0.25)); if (v > 3) burst(400, 0.5, 0.5, Math.min(1, v * 0.1)); },
     update(s, alarmLit) {
       if (!ctx) return;

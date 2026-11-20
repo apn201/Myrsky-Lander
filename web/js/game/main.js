@@ -24,7 +24,7 @@ let subT = 0;
 sound.onSubtitle(t => { $('callout').textContent = t; subT = performance.now(); });
 setInterval(() => { if (performance.now() - subT > 2800) $('callout').textContent = ''; }, 300);
 let s, dap, evs = [], scenario = SCENARIOS[0], paused = true, acc = 0, last = performance.now(), shownEvents = 0, shownPhase = '';
-let calls = {};
+let calls = {}, lastDust = 0;
 function restart(sc = scenario) {
   scenario = sc;
   s = newState();
@@ -50,7 +50,7 @@ function toggleMode() {
   if (m === 'MANUAL') input.setThrottle(Math.max(0, Math.min(1, (s.throttle - DPS.minFrac) / 0.6)));
   setMode(dap, s, m); input.setMode(m);
 }
-function engineStop() { if (s.stage === 'full') s.engStop = !s.engStop; else if (s.phase === 'ascent') s.apsOn = !s.apsOn; }
+function engineStop() { if (s.stage === 'full') { s.engStop = !s.engStop; if (s.engStop && s.contactLight && !calls.es) { calls.es = true; sound.cue('engstop'); } } else if (s.phase === 'ascent') s.apsOn = !s.apsOn; }
 function doLiftoff() { if (abortStage(s) || liftoff(s)) { dap.hold = null; $('msg').hidden = true; shownPhase = s.phase; } }
 function ackAlarm() { s.alarmQuiet = true; s.everAcked = true; if (s.alarm && !s.alarm.acked) { s.alarm.acked = true; if (!calls.go) { calls.go = true; setTimeout(() => sound.say("Roger. We're go on that alarm.", { houston: true }), 1800); } } }
 function menu() {
@@ -90,7 +90,7 @@ document.addEventListener('visibilitychange', () => { last = performance.now(); 
 
 // debugging from the console: game.set({ vel: [0, -2, 0] }), game.paused = true
 window.game = {
-  get s() { return s; }, get dap() { return dap; }, world,
+  get s() { return s; }, get dap() { return dap; }, world, sound,
   set(o) { Object.assign(s, o); view.snapCamera(); },
   get paused() { return paused; }, set paused(v) { paused = v; },
 };
@@ -134,6 +134,7 @@ function frame(now) {
   $('master').classList.toggle('on', lit);
   sound.update(s, tone);
   const scr = view.update(s, g.h, dt);
+  lastDust = scr.dust || 0;
   hud(s, g, scr);
   requestAnimationFrame(frame);
 }
@@ -230,9 +231,11 @@ function callouts(s, g) {
     }
   }
   const secs = s.dpsFuel / (massProps(s).m * MOON_G / DPS.vex);
-  if (secs < 60 && !calls.f60) { calls.f60 = true; sound.say('Sixty seconds'); }
-  if (secs < 30 && !calls.f30) { calls.f30 = true; sound.say('Thirty seconds'); }
-  if (s.contactLight && !calls.contact) { calls.contact = true; sound.say('Contact light'); }
+  if (secs < 60 && !calls.f60) { calls.f60 = true; sound.cue('s60'); }
+  if (secs < 30 && !calls.f30) { calls.f30 = true; sound.cue('s30'); }
+  if (s.contactLight && !calls.contact) { calls.contact = true; sound.cue('contact'); }
+  if (s.radarOut && !calls.av) { calls.av = true; sound.cue('altvel'); }
+  if (lastDust > 0.25 && !calls.dust && s.phase === 'flying') { calls.dust = true; sound.cue('dust'); }
   if (s.firstTouch && !calls.td) { calls.td = true; sound.thud(s.firstTouch.vVert); }
   const hard = s.events.length && s.events[s.events.length - 1];
   if (hard && hard.sev >= 2 && hard.t > lastThud && /HIT|FAILED|BOTTOMED|BREACHED/.test(hard.text)) { lastThud = hard.t; sound.thud(5); }
