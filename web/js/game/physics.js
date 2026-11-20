@@ -324,7 +324,8 @@ export function report(s, world = FLAT) {
       else if (st.c > 0.005) put(st.c > GEAR.stroke * 0.6 ? 1 : 0, `Leg ${n}: strut crushed ${(st.c * 100).toFixed(0)} of ${(GEAR.stroke * 100).toFixed(0)} cm`);
     });
     const tl = tilt(s) / DEG;
-    const sl = Math.acos(groundNormal(world, s.pos[0], s.pos[2])[1]) / DEG;
+    const terrainOnly = world.terrain ? { height: world.terrain, slope: true } : world;   // slope of the ground, not of a boulder
+    const sl = Math.acos(groundNormal(terrainOnly, s.pos[0], s.pos[2])[1]) / DEG;
     put(sl > 12 ? 1 : 0, `Ground slope under the lander ${sl.toFixed(1)}° (design limit 12°)`);
     put(tl > 60 ? 3 : tl > 30 ? 2 : tl > 12 ? 1 : 0, `Resting tilt ${tl.toFixed(1)}°${tl > 12 ? ': the ascent stage will leave at an angle' : ''}`);
   }

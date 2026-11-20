@@ -10,7 +10,7 @@
 
 ### Prototype status (20 Nov 2026)
 
-6-DOF rigid body (`physics.js`), autopilot (`dap.js`), vehicle data (`lm.js`), checked by `node tools/test_physics.mjs` (23 checks, including a keyboard-style pilot that only follows the flight director, a too-fast start that needs manual full throttle, and an 8° slope).
+6-DOF rigid body (`physics.js`), autopilot (`dap.js`), vehicle data (`lm.js`), checked by `node tools/test_physics.mjs` (25 checks, including boulders under the engine and under a footpad, a keyboard-style pilot that only follows the flight director, a too-fast start that needs manual full throttle, and an 8° slope).
 - Real values from Luminary 131 (Apollo 13 LM software, in the Space pilot project): descent engine exhaust velocity 2,955.9 m/s and FTP thrust 43,455 N, throttle lag 0.2 s, ascent exhaust velocity 3,030 m/s, 14 ms minimum jet pulse, the jet table for U/V rotation and X translation.
 - 16 RCS jets at their quads; torque about the moving centre of mass; inertia from the mass layout.
 - Rate command / attitude hold, P66 rate of descent (1 ft/s per click) or manual throttle, trim gimbal.
@@ -30,7 +30,8 @@ Simplifications and estimates still open: leg truss modelled as one vertical cru
 ## Look
 
 - Myrsky's terrain, Sun, shadows and exposure (done).
-- Photo cut-out lander (done). Next: draw leg compression and broken legs over the photo; descent stage damage.
+- Photo cut-out lander (done). Leg stroke squashes the photo's legs per side, failed legs are cut out and drawn as folded 3D struts, contact probes drawn in 3D (done). Better mask: art/lm/README.md.
+- Boulders (`rocks.js`): Surveyor 3 size-frequency law, game default 4x the measured density, in the same height field as the legs; surface readout and "BOULDERS BELOW — CLEAR x m EAST" advisories; flight director re-aims at clear ground when the target is out of reach.
 - Camera option: view out the LM window in the style of the 16 mm Apollo film camera.
 - Exhaust blowing dust sideways near the ground.
 

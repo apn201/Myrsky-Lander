@@ -10,20 +10,22 @@
 //
 // Code written with an AI assistant (Claude Code, Anthropic), 20 Nov 2026.
 import * as THREE from 'three';
-import { loadTerrain, heightTexture, buildTerrainMesh, buildWideMesh, terrainMaterial, heightAt, useTerrainShadow } from '../myrsky/terrain.js';
+import { loadTerrain, heightTexture, buildTerrainMesh, buildWideMesh, terrainMaterial, heightAt, useTerrainShadow, addTerrainShadow } from '../myrsky/terrain.js';
+import { makeRocks, rockMeshes } from './rocks.js';
 import { loadLM } from '../myrsky/models.js';
 import { skyState } from '../myrsky/sky.js';
 import { DATES } from '../myrsky/data.js';
-import { DPS, APS, GEAR, JETS } from './lm.js';
-import { Q_UPRIGHT } from './physics.js';
+import { DPS, APS, GEAR, JETS, LEGS } from './lm.js';
+import { Q_UPRIGHT, padJointBody } from './physics.js';
 import { qmul, qconj, qrot } from './vec.js';
 
 const V = a => new THREE.Vector3(a[0], a[1], a[2]);
 const TQ = q => new THREE.Quaternion(q[1], q[2], q[3], q[0]);
 const PAD_BOTTOM_X = GEAR.padX - GEAR.padDrop;     // body X of the footpad soles (gear extended)
 
-// terrain for the physics: height and slope from the same LROC data as the picture
-export const world = { height: (x, z) => heightAt(x, -z), slope: true };
+// ground for the physics: LROC heights and slopes plus the boulders, the same as the picture
+const terrainH = (x, z) => heightAt(x, -z);
+export const world = { height: terrainH, terrain: terrainH, slope: true, maxRock: null };
 
 export async function createScene(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -67,6 +69,11 @@ export async function createScene(canvas) {
   scene.add(buildWideMesh(wideMat));
   for (const m of [terrainMat, wideMat]) m.userData.uniforms.sunDirW.value.copy(sunW);
 
+  // boulders
+  const rk = makeRocks(terrainH);
+  world.height = rk.height; world.maxRock = rk.maxRock; world.rocks = rk.rocks;
+  scene.add(rockMeshes(rk.rocks, tRego, addTerrainShadow));
+
   // landing target: a thin ring on Intrepid's spot
   const ring = new THREE.Mesh(new THREE.RingGeometry(5.6, 6.0, 64),
     new THREE.MeshBasicMaterial({ color: 0x66ff99, transparent: true, opacity: 0.45, depthWrite: false }));
@@ -96,6 +103,7 @@ export async function createScene(canvas) {
   for (const mesh of [lm.full, lm.desc, ascentPhotoMesh]) {
     const u = mesh.material.uniforms;
     u.bright.value = 0.1 * S * 3.0; u.sunTint.value.copy(sunTint); u.fillTint.value.copy(fill);
+    squashableLegs(mesh.material);
   }
 
   // jets and engine glows, in body axes
@@ -145,6 +153,7 @@ export async function createScene(canvas) {
       photoDesc.visible = photoAsc.visible = s.stage !== 'full';
       if (s.stage === 'full') placePhoto(photoFull, ascentPose);
       else { placePhoto(photoDesc, descentPose); placePhoto(photoAsc, ascentPose); }
+      setLegs(s.stage === 'full' ? lm.full.material : lm.desc.material, s.stage === 'full' ? s.legs : s.descentPose.legs);
       fx.update(s);
 
       sunLight.target.position.copy(photoFull.visible ? photoFull.position : photoAsc.position);
@@ -171,6 +180,34 @@ export async function createScene(canvas) {
     cycleZoom() { zoom = (zoom + 1) % ZOOMS.length; },
     snapCamera() { first = true; },
   };
+}
+
+// Leg damage on the rigid photo: the legs are shortened by each side's strut stroke (the body sinks
+// toward the footpads) and a failed leg is cut out (a folded 3D strut is drawn instead). Screen left is
+// west, the forward (+Z) leg; right is the aft (-Z) leg; the side (±Y) legs stand in the middle.
+const PHOTO = { PW: 825 * 0.010687, PH: 680 * 0.010687, AXU: 0.545, SOLE: 0.53, STAGE: 1.42 };
+function squashableLegs(mat) {
+  mat.uniforms.legC = { value: new THREE.Vector3() };
+  mat.uniforms.legBroken = { value: new THREE.Vector2() };
+  mat.fragmentShader = mat.fragmentShader
+    .replace('uniform sampler2D map;', `uniform sampler2D map; uniform vec3 legC; uniform vec2 legBroken;
+      const float PW = ${PHOTO.PW.toFixed(4)}, PH = ${PHOTO.PH.toFixed(4)}, AXU = ${PHOTO.AXU}, SOLE = ${PHOTO.SOLE}, STAGE = ${PHOTO.STAGE};`)
+    .replace('vec4 t = texture2D(map, vUv);', `vec2 uvS = vUv;
+        float xm = (vUv.x - AXU) * PW, ym = vUv.y * PH - SOLE;
+        if (ym < STAGE) {
+          float c = mix(legC.y, xm < 0.0 ? legC.x : legC.z, clamp(abs(xm) / 4.7, 0.0, 1.0));
+          float ys = (ym - c) * STAGE / max(STAGE - c, 0.25);
+          if (ys < -0.45) discard;
+          uvS.y = (ys + SOLE) / PH;
+          if ((xm < 0.0 ? legBroken.x : legBroken.y) > 0.5 && abs(xm) > 2.15) discard;
+        }
+        vec4 t = texture2D(map, uvS);`);
+  mat.needsUpdate = true;
+}
+function setLegs(mat, legs) {
+  const mid = (legs[2].c + legs[3].c) / 2;
+  mat.uniforms.legC.value.set(legs[0].c, mid, legs[1].c);
+  mat.uniforms.legBroken.value.set(legs[0].broken ? 1 : 0, legs[1].broken ? 1 : 0);
 }
 
 // The ascent stage on its own: the pixels of the full photo that the descent-only photo lacks.
@@ -210,6 +247,24 @@ function buildFx() {
   const aps = new THREE.Mesh(new THREE.CircleGeometry(0.3, 20), glowMat());
   aps.position.set(APS.point[0] - 0.05, 0, 0); aps.rotation.y = Math.PI / 2;
   group.add(dps, aps);
+
+  // contact probes (1.73 m below three footpads) and folded struts for failed legs
+  const metal = new THREE.MeshStandardMaterial({ color: 0xc9c2b0, metalness: 0.6, roughness: 0.4 });
+  const gold = new THREE.MeshStandardMaterial({ color: 0xa8894a, metalness: 0.6, roughness: 0.5 });
+  const unit = new THREE.CylinderGeometry(1, 1, 1, 6);
+  const up = new THREE.Vector3(0, 1, 0);
+  const tube = (m, a, b, r) => {
+    const d = new THREE.Vector3().subVectors(b, a), l = d.length();
+    m.position.copy(a).addScaledVector(d, 0.5); m.scale.set(r, l, r);
+    m.quaternion.setFromUnitVectors(up, d.normalize());
+  };
+  const legFx = LEGS.map(leg => {
+    const probe = leg.probe ? new THREE.Mesh(unit, metal) : null;
+    const strut = new THREE.Mesh(unit, gold), pad = new THREE.Mesh(new THREE.CylinderGeometry(GEAR.padRadius, GEAR.padRadius, 0.1, 16), gold);
+    pad.rotation.z = Math.PI / 2;
+    for (const m of [probe, strut, pad]) if (m) { m.castShadow = true; group.add(m); }
+    return { leg, probe, strut, pad };
+  });
   return {
     group,
     update(s) {
@@ -221,6 +276,26 @@ function buildFx() {
       dps.visible = s.stage === 'full';
       dps.material.opacity = Math.min(0.6, s.throttle);
       aps.material.opacity = s.stage === 'ascent' && s.apsOn && s.apsFuel > 0 ? 0.6 : 0;
+      legFx.forEach((L, i) => {
+        const st = s.legs[i], full = s.stage === 'full';
+        const j = new THREE.Vector3(...padJointBody(L.leg, st));
+        const out = new THREE.Vector3(0, L.leg.dir[1], L.leg.dir[2]);
+        if (L.probe) {
+          L.probe.visible = full && !st.broken;
+          // straight down until it touches, then bent back along the ground
+          const end = s.contactLight || st.contact
+            ? j.clone().add(new THREE.Vector3(-GEAR.padDrop - 0.1, 0, 0)).addScaledVector(out, 1.6)
+            : j.clone().add(new THREE.Vector3(-(GEAR.padDrop + GEAR.probe), 0, 0));
+          tube(L.probe, j.clone().add(new THREE.Vector3(-GEAR.padDrop, 0, 0)), end, 0.03);
+        }
+        L.strut.visible = L.pad.visible = full && st.broken;
+        if (st.broken) {
+          const a = new THREE.Vector3(...L.leg.attach);
+          const e = a.clone().add(new THREE.Vector3(-1.7, 0, 0)).addScaledVector(out, 1.1);
+          tube(L.strut, a, e, 0.09);
+          L.pad.position.copy(e).add(new THREE.Vector3(-0.1, 0, 0)).addScaledVector(out, 0.3);
+        }
+      });
     },
   };
 }

@@ -175,4 +175,23 @@ function keyboardPilot(start, world) {
     `${s.report?.verdict}, tilt ${(tilt(s) / DEG).toFixed(1)}° ${sevs(s)}`);
 }
 
+// boulders: an ellipsoid cap in the height field, as rocks.js makes them
+function rockWorld(x0, z0, r, prot) {
+  return { slope: true, terrain: () => 0, height: (x, z) => { const u = (x - x0) / r, v = (z - z0) / r, q = 1 - u * u - v * v; return q > 0 ? prot * Math.sqrt(q) : 0; } };
+}
+function dropOn(world, x) {
+  const s = newState({ alt: 2, vel: [0, -1.0, 0], q: attitude(0), engStop: true, throttle: 0, pos: [x, 0, 0] });
+  s.pos[1] += 1.5 - padHeight(s, world);
+  fly(s, createDap(), NOSTICK, 30, s => s.phase !== 'flying', world);
+  return s;
+}
+{
+  const under = dropOn(rockWorld(0, 0, 1.0, 0.9), 0);
+  check('0.9 m boulder under the engine: nozzle and stage damage', under.events.some(e => e.text.includes('NOZZLE')),
+    `${under.report?.verdict}: ${sevs(under)}`);
+  const pad = dropOn(rockWorld(-4.72, 0, 1.0, 0.7), 0);
+  check('footpad on a 0.7 m boulder: lander rests tilted', pad.phase === 'down' && tilt(pad) > 2 * DEG,
+    `${pad.report?.verdict}, tilt ${(tilt(pad) / DEG).toFixed(1)}° ${sevs(pad)}`);
+}
+
 process.exit(fails ? 1 : 0);

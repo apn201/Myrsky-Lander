@@ -101,6 +101,9 @@ function hud(s, g, scr) {
   $('rcs').textContent = s.rcsFuel.toFixed(0);
   $('dist').textContent = (-g.dx).toFixed(0);
   $('met').textContent = s.t.toFixed(1);
+  const sf = g.surf;
+  $('surf').textContent = sf.rock > 0.35 ? `ROCK ${sf.rock.toFixed(1)}m` : sf.slope > 9 ? `SLOPE ${sf.slope.toFixed(0)}°` : 'CLEAR';
+  $('surf').className = sf.ok ? '' : 'sev2';
   $('g').textContent = s.gNow.toFixed(1);
   $('contact').classList.toggle('on', s.contactLight);
   $('engstop').classList.toggle('on', s.stage === 'full' && s.engStop);

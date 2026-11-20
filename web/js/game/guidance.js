@@ -16,14 +16,26 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 export const TARGET = [0, 0];    // Intrepid's touchdown spot (x, z)
 const VTD = 0.6;                 // aimed touchdown rate, m/s
 
-export function guidance(s, dap, world) {
+const FLAT = { height: () => 0 };
+export function guidance(s, dap, world = FLAT) {
   const h = Math.max(0, padHeight(s, world));
   const { m } = massProps(s);
   const up = qrot(s.q, [1, 0, 0]);
   const lean = Math.asin(clamp(up[0], -1, 1));          // + = leaning toward +x
   const cos = Math.max(0.3, up[1]);
   const vy = s.vel[1], vx = s.vel[0];
-  const dx = TARGET[0] - s.pos[0];
+  const surf = surface(world, s.pos[0], s.pos[2]);
+  // aim point: the target, or the nearest clear ground when the target is out of reach down low
+  let aimX = TARGET[0];
+  if (padHeight(s, world) < 60 && Math.abs(TARGET[0] - s.pos[0]) > 120) {
+    // pick once, from where the lander can stop (about 1 m/s² of braking), and keep it while it stays clear
+    if (!s.aim || !surface(world, s.aim.x, s.pos[2]).ok) {
+      const stopX = s.pos[0] + s.vel[0] * Math.abs(s.vel[0]) / 2;
+      s.aim = { t: s.t, x: clearSpot(world, stopX, s.pos[2]) ?? stopX };
+    }
+    aimX = s.aim.x;
+  }
+  const dx = aimX - s.pos[0];
 
   // come down slower while the target is still far, so the approach does not run out of height first
   const far = clamp(1 - (Math.abs(dx) - 15) / 120, 0.2, 1);
@@ -34,7 +46,11 @@ export function guidance(s, dap, world) {
   const sliding = Math.abs(vx - wantVx) > 1.2;
   const leanMax = h < 4 ? (sliding ? 8 : 3) * DEG : h < 12 ? (sliding ? 12 : 6) * DEG : 20 * DEG;
   const leanWant = clamp((wantVx - vx) * 0.08, -leanMax, leanMax);
-  const leanErr = leanWant - lean;
+  // rate term, as in a flight director: the dot comes back toward the centre while the lander is still
+  // turning, so letting go of the key when it is centred does not overshoot
+  const wW = qrot(s.q, s.w);
+  const leanRate = -wW[2] / Math.max(0.3, Math.cos(lean));
+  const leanErr = leanWant - lean - 0.9 * leanRate;
 
   // vertical: what the engine has to do to reach the aimed touchdown rate at the ground
   const brake = vy < -VTD ? (vy * vy - VTD * VTD) / (2 * Math.max(0.3, h - 0.3)) : 0;
@@ -61,7 +77,34 @@ export function guidance(s, dap, world) {
     } else if (manual && fNeed < fP66 * 0.8 && vy > wantVy - 1) say(1, 'P66 CAN TAKE OVER AGAIN (M)');
     if (h < 12 && Math.abs(lean) > 7 * DEG) say(2, 'LEVEL THE LANDER');
     if (h < 40 && Math.abs(vx - wantVx) > 2) say(1, `TOO FAST ${vx - wantVx > 0 ? 'EAST' : 'WEST'}WARD — FOLLOW THE DOT`);
-    if (h < 60 && Math.abs(dx) > 250) say(1, 'TARGET OUT OF REACH — PICK A FLAT SPOT');
+    if (h < 60 && Math.abs(TARGET[0] - s.pos[0]) > 120) say(1, 'TARGET OUT OF REACH — FLY TO CLEAR GROUND');
+    if (h < 70 && h > 1 && !surf.ok) {
+      const spot = clearSpot(world, s.pos[0], s.pos[2]);
+      const where = spot === null ? 'NO CLEAR GROUND NEARBY' : `CLEAR ${Math.abs(spot - s.pos[0]).toFixed(0)} m ${spot > s.pos[0] ? 'EAST ▶' : '◀ WEST'}`;
+      say(h < 25 ? 2 : 1, `${surf.rock > 0.35 ? `BOULDERS ${surf.rock.toFixed(1)} m` : `SLOPE ${surf.slope.toFixed(0)}°`} BELOW — ${where}`);
+    }
   }
-  return { h, lean, leanWant, leanErr, wantVy, wantVx, vertErr, adv, dx };
+  return { h, lean, leanWant, leanErr, wantVy, wantVx, vertErr, adv, dx, surf, aimX };
+}
+
+// The ground a lander would sit on at (x, z): the highest rock inside the footprint and the slope
+// across the footpads. Rocks over 0.35 m threaten a footpad or the nozzle (0.5 m clearance); the LM's
+// design slope limit was 12°.
+export function surface(world, x, z) {
+  const t = world.terrain ?? world.height;
+  const R = 4.72;
+  const sx = (t(x + R, z) - t(x - R, z)) / (2 * R), sz = (t(x, z + R) - t(x, z - R)) / (2 * R);
+  const slope = Math.atan(Math.hypot(sx, sz)) / DEG;
+  const rock = world.maxRock ? world.maxRock(x, z, 5.5) : 0;
+  return { rock, slope, ok: rock <= 0.35 && slope <= 9 };
+}
+
+// nearest x (same z) within 80 m where the surface is fine, or null
+export function clearSpot(world, x, z) {
+  for (let d = 0; d <= 80; d += 2) for (const sg of [1, -1]) {
+    const xx = x + sg * d;
+    if (surface(world, xx, z).ok) return xx;
+    if (d === 0) break;
+  }
+  return null;
 }
