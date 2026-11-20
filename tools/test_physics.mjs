@@ -90,7 +90,7 @@ check('lunar gravity', near(MOON_G, 1.624, 0.002), MOON_G.toFixed(4));
 // touchdowns at different speeds, engine stopped, attitude held
 function drop(vDown, vSide = 0, tiltDeg = 0) {
   const s = newState({ alt: 0.05, vel: [vSide, -vDown, 0], q: attitude(tiltDeg * DEG), engStop: true, throttle: 0 });
-  fly(s, createDap(), NOSTICK, 30, s => s.phase !== 'flying');
+  fly(s, createDap(), NOSTICK, 40, s => s.phase !== 'flying' && s.phase !== 'wreck');
   return s;
 }
 const sevs = s => s.report?.lines.filter(l => l.sev).map(l => l.text).join(' | ');
@@ -103,7 +103,9 @@ const sevs = s => s.report?.lines.filter(l => l.sev).map(l => l.text).join(' | '
   const h = drop(5.5);
   check('5.5 m/s: hard landing with damage, crew alive', h.phase === 'down' && h.report.worst >= 1 && !h.crewLost, `${h.report?.verdict}: ${sevs(h)}`);
   const x = drop(15);
-  check('15 m/s: severe or crew lost', x.report && x.report.worst >= 3, `${x.report?.verdict}: ${sevs(x)}`);
+  check('15 m/s: breaks up, ascent stage torn off, debris', x.brokeUp && x.debris?.length > 20 && x.report && x.report.worst >= 3, `${x.report?.verdict}: ${sevs(x)}`);
+  const y = drop(8);
+  check('8 m/s: report says whether the crew survived', y.report && /CREW|DAMAGE|LANDING/.test(y.report.verdict), `${y.report?.verdict}, ${y.gPeak.toFixed(0)} g: ${sevs(y)}`);
   const sl = drop(1.5, 3.0);
   check('3 m/s sideways: not a clean landing', sl.report && sl.report.worst >= 1, `${sl.report?.verdict}, tilt ${(tilt(sl) / DEG).toFixed(0)}° ${sevs(sl)}`);
 }

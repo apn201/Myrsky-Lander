@@ -13,6 +13,7 @@ import * as THREE from 'three';
 import { loadTerrain, heightTexture, buildTerrainMesh, buildWideMesh, terrainMaterial, heightAt, useTerrainShadow, addTerrainShadow } from '../myrsky/terrain.js';
 import { makeRocks, rockMeshes } from './rocks.js';
 import { createPost } from './post.js';
+import { createDust, createDebris } from './dust.js';
 import { loadLM } from '../myrsky/models.js';
 import { skyState } from '../myrsky/sky.js';
 import { DATES } from '../myrsky/data.js';
@@ -130,6 +131,10 @@ export async function createScene(canvas) {
     squashableLegs(mesh.material);
   }
 
+  // engine dust and crash debris
+  const dust = createDust(scene, (x, z) => world.height(x, z), new THREE.Color(1, 0.97, 0.94).multiplyScalar(0.9));
+  const debris = createDebris(scene);
+
   // jets and engine glows, in body axes
   const fx = buildFx();
   scene.add(fx.group);
@@ -161,7 +166,7 @@ export async function createScene(canvas) {
   };
 
   const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
-  let first = true, zoom = 1;
+  let first = true, zoom = 1, camMode = 'chase';
   const ZOOMS = [0.45, 1, 2.2];
   const tmp = new THREE.Vector3();
 
@@ -180,6 +185,13 @@ export async function createScene(canvas) {
       else { placePhoto(photoDesc, descentPose); placePhoto(photoAsc, ascentPose); }
       setLegs(s.stage === 'full' ? lm.full.material : lm.desc.material, s.stage === 'full' ? s.legs : s.descentPose.legs);
       fx.update(s);
+      debris.update(s.debris);
+      {
+        const full = s.stage === 'full';
+        const noz = bodyToWorld(ascentPose, full ? [DPS.exit, 0, 0] : [APS.point[0] - 0.3, 0, 0]);
+        const thrust = full ? s.throttle * DPS.fRated : (s.apsOn && s.apsFuel > 0 ? APS.thrust * 0.5 : 0);
+        dust.update(noz, thrust, Math.min(dt, 0.05), performance.now() / 1000, s.burst ?? null);
+      }
       const dO = s.stage === 'full' ? null : s.descentPose.origin;
       if (s.stage === 'full') { const b = bodyToWorld(ascentPose, [PAD_BOTTOM_X, 0, 0]); placeAO(aoD, b.x, b.z, b.y, 5); aoA.material.opacity = 0; }
       else { placeAO(aoD, dO[0], dO[2], dO[1] + PAD_BOTTOM_X, 5); const b = bodyToWorld(ascentPose, [0, 0, 0]); placeAO(aoA, b.x, b.z, b.y - 1.0, 3); }
@@ -188,6 +200,25 @@ export async function createScene(canvas) {
       sunLight.position.copy(sunLight.target.position).addScaledVector(sunW, 1500);
       for (const m of [terrainMat, wideMat]) m.userData.uniforms.camPos.value.copy(camera.position);
 
+      if (camMode === 'window') {
+        // the 16 mm data acquisition camera's view out of the right-hand (LMP) window, angled down
+        photoFull.visible = photoDesc.visible = photoAsc.visible = false;
+        const eye = bodyToWorld(ascentPose, [1.6, 0.75, 1.55]);
+        const dirB = [-Math.sin(32 * Math.PI / 180), 0.28, Math.cos(32 * Math.PI / 180)];
+        const dW = qrot(s.q, dirB), upW = qrot(s.q, [1, 0, 0]);
+        camera.position.copy(eye);
+        camera.up.set(upW[0], upW[1], upW[2]);
+        camera.lookAt(eye.x + dW[0], eye.y + dW[1], eye.z + dW[2]);
+        camera.fov = 52; camera.updateProjectionMatrix();
+        post.uniforms.focus.value = Math.max(8, h / 0.55);
+        post.uniforms.aperture.value = 0.25;
+        post.render(scene, camera);
+        camera.up.set(0, 1, 0);
+        first = true;
+        tmp.set(s.pos[0], s.pos[1], s.pos[2]).project(camera);
+        return { x: 0, y: 0, zoom };
+      }
+      if (camera.fov !== 32) { camera.fov = 32; camera.updateProjectionMatrix(); }
       // side view from the north, zoomed out arcade-style: lander high in the frame, ground below
       const d = (45 + Math.min(h, 400) * 0.75) * ZOOMS[zoom];
       const gy = heightAt(s.pos[0], -s.pos[2]);
@@ -208,6 +239,8 @@ export async function createScene(canvas) {
       return { x: (tmp.x + 1) / 2 * canvas.clientWidth, y: (1 - tmp.y) / 2 * canvas.clientHeight, zoom };
     },
     cycleZoom() { zoom = (zoom + 1) % ZOOMS.length; },
+    toggleCamera() { camMode = camMode === 'chase' ? 'window' : 'chase'; return camMode; },
+    toggleFilm() { post.uniforms.film.value = post.uniforms.film.value > 0.5 ? 0 : 1; return post.uniforms.film.value; },
     snapCamera() { first = true; },
   };
 }

@@ -30,7 +30,7 @@
   .leg { height: 6px; border: 1px solid var(--dim); position: relative; }
   .leg b { position: absolute; left: 0; top: 0; bottom: 0; background: var(--hud); }
   .leg.touch { border-color: var(--hud); } .leg.warn b { background: var(--warn); } .leg.dead { border-color: var(--bad); } .leg.dead b { background: var(--bad); width: 100% !important; }
-  #log { bottom: max(16px, env(safe-area-inset-bottom)); right: 16px; text-align: right; max-width: 60vw; }
+  #log { bottom: calc(max(16px, env(safe-area-inset-bottom)) + 30px); right: 16px; text-align: right; max-width: 60vw; }
   .sev0 { color: var(--hud); } .sev1 { color: #e8f08c; } .sev2 { color: var(--warn); } .sev3, .sev4 { color: var(--bad); }
   #adv { bottom: calc(max(16px, env(safe-area-inset-bottom)) + 200px); left: 16px; right: 16px; text-align: center; font-size: 17px; letter-spacing: .04em; }
   #adv.sev3 { animation: blink .6s steps(2) infinite; }
@@ -118,7 +118,7 @@
   <span class="arr" id="fd-l">◀</span><span class="arr" id="fd-r">▶</span><span class="arr" id="fd-u">▲</span><span class="arr" id="fd-d">▼</span></div>
 <div id="menu" hidden><div>
   <h1>MYRSKY LANDER</h1>
-  <p>Land a lunar module on the real Apollo 12 site. Real terrain, real physics, real trouble. Keys: ←→ lean, ↑↓ descent rate, space engine stop, M manual throttle, enter abort stage / liftoff, A alarm acknowledge, 1-4 isolate RCS quads, Z zoom, V sound, N this menu.</p>
+  <p>Land a lunar module on the real Apollo 12 site. Real terrain, real physics, real trouble. Keys: ←→ lean, ↑↓ descent rate, space engine stop, M manual throttle, enter abort stage / liftoff, A alarm acknowledge, 1-4 isolate RCS quads, Z zoom, C window camera, G film look, V sound, N this menu.</p>
   <div id="menu-list"></div>
 </div></div>
 <div id="loading">loading the Apollo 12 landing site…</div>
@@ -128,7 +128,7 @@
   <span class="keys">keep the dot in the crosshair: ←→ lean · ↑↓ descent rate (1 ft/s per click) · space engine stop · M manual throttle · A alarm · enter abort · N scenarios</span>
   <span class="touch">keep the dot in the crosshair: slide sideways to lean, up/down for descent rate</span>
 </div>
-<div id="touch-buttons"><button id="btn-stop">ENG STOP</button><button id="btn-mode">MODE</button><button id="btn-zoom">ZOOM</button><button id="btn-ack">ALARM ACK</button><button id="btn-abort">ABORT STAGE</button></div>
+<div id="touch-buttons"><button id="btn-stop">ENG STOP</button><button id="btn-mode">MODE</button><button id="btn-zoom">ZOOM</button><button id="btn-cam">CAMERA</button><button id="btn-ack">ALARM ACK</button><button id="btn-abort">ABORT STAGE</button></div>
 
 <div id="msg" hidden><div>
   <h2 id="msg-title"></h2>

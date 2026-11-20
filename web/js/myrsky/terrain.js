@@ -1,5 +1,5 @@
 // Ground: LROC NAC height model (2 m) near the site, SLDEM2015 (59 m) out to the horizon.
-// Myrsky-Lander changes (20 Nov 2026): far-field visual relief and albedo outside the 2 m model; detail kept to game camera distances.
+// Myrsky-Lander changes (20 Nov 2026): far-field visual relief and albedo outside the 2 m model only.
 // World axes: x = east, y = up, z = -north. Metres. Origin = Apollo 12 lander (Intrepid).
 // Code written with an AI assistant (Claude Code, Anthropic), Nov 2026.
 import * as THREE from 'three';
@@ -197,12 +197,9 @@ float farH(vec2 p){ return 2.2 * craters(p, 300.0, 0.3) + 1.2 * craters(p + 77.0
   if (detailOn > 0.5) {
     // real regolith grain from crew photo AS12-49-7284 at two scales, fading out with distance
     float near = 1.0 - smoothstep(4.0, 70.0, camD);
-    float mid = 1.0 - smoothstep(40.0, 900.0, camD);
+    float mid = 1.0 - smoothstep(30.0, 320.0, camD);
     float r1 = 1.0 + 1.35 * 0.5 * (rego(vEN / 0.7) + rego(mat2(0.36, 0.93, -0.93, 0.36) * vEN / 0.93 + 0.61));
     float r2 = 1.0 + 0.7 * rego(mat2(0.8, -0.6, 0.6, 0.8) * vEN / 3.3 + 0.37);
-    // larger-scale patchiness in the 2 m area too, kept out to a game camera's distance
-    float big = 1.0 + 0.12 * (fbm(vEN * 0.035 + 1.7) - 0.47);
-    alb *= mix(1.0, big, 1.0 - smoothstep(600.0, 4000.0, camD));
     // slow patchy brightness so the mid distance does not read as one even carpet
     float patchy = 1.0 + 0.10 * (fbm(vEN * 0.11 + 7.0) - 0.47);
     alb *= mix(1.0, r1, near * 0.85) * mix(1.0, r2, mid * 0.45) * mix(1.0, patchy, mid);

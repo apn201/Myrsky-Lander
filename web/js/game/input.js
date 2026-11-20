@@ -69,8 +69,8 @@ export function createInput(root) {
         if (up) st.throttle = Math.min(1, st.throttle + THROTTLE_RATE * dt);
         if (down) st.throttle = Math.max(0, st.throttle - THROTTLE_RATE * dt);
       }
-      const l = keys.has('arrowleft') || keys.has('a');
-      const r = keys.has('arrowright') || keys.has('d');
+      const l = keys.has('arrowleft');                 // A is the alarm acknowledge, not a lean key
+      const r = keys.has('arrowright');
       const pitch = (r ? 1 : 0) - (l ? 1 : 0) || st.touchPitch;
       const out = { pitch, roll: 0, yaw: 0, tx: 0, ty: 0, tz: 0, rodClicks: st.clicks, throttle: st.throttle, fine: st.fine };
       st.clicks = 0;

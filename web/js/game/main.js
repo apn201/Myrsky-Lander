@@ -48,8 +48,8 @@ function toggleMode() {
   setMode(dap, s, m); input.setMode(m);
 }
 function engineStop() { if (s.stage === 'full') s.engStop = !s.engStop; else if (s.phase === 'ascent') s.apsOn = !s.apsOn; }
-function doLiftoff() { if (abortStage(s)) { dap.hold = null; $('msg').hidden = true; shownPhase = s.phase; } }
-function ackAlarm() { s.alarmQuiet = true; if (s.alarm && !s.alarm.acked) { s.alarm.acked = true; if (!calls.go) { calls.go = true; setTimeout(() => sound.say("Roger. We're go on that alarm."), 1800); } } }
+function doLiftoff() { if (abortStage(s) || liftoff(s)) { dap.hold = null; $('msg').hidden = true; shownPhase = s.phase; } }
+function ackAlarm() { s.alarmQuiet = true; s.everAcked = true; if (s.alarm && !s.alarm.acked) { s.alarm.acked = true; if (!calls.go) { calls.go = true; setTimeout(() => sound.say("Roger. We're go on that alarm."), 1800); } } }
 function menu() {
   paused = true;
   $('menu-list').innerHTML = '';
@@ -71,10 +71,12 @@ input.on('space', engineStop);
 input.on('enter', doLiftoff);
 input.on('m', toggleMode);
 input.on('z', () => view.cycleZoom());
-input.on('c', () => view.cycleZoom());
+input.on('c', () => view.toggleCamera());
+input.on('g', () => view.toggleFilm());
 $('btn-stop').onclick = engineStop;
 $('btn-mode').onclick = toggleMode;
 $('btn-zoom').onclick = () => view.cycleZoom();
+$('btn-cam').onclick = () => view.toggleCamera();
 $('btn-lift').onclick = doLiftoff;
 $('btn-again').onclick = () => restart();
 $('btn-menu').onclick = menu;
@@ -120,10 +122,14 @@ function frame(now) {
     callouts(s, g);
   }
   const alarmLit = !!(s.alarm && !s.alarm.acked) || (s.phase === 'flying' && g.adv.some(a => a.lvl >= 3));
-  // the MASTER ALARM light and tone stay on until pressed (A); a new alarm or failure lights it again
+  // the MASTER ALARM light stays on until pressed (A or click). The tone runs until the first
+  // acknowledge; after that a new alarm lights the light with a short chirp only.
   const lit = alarmLit && !s.alarmQuiet;
+  if (lit && !s.litSince) s.litSince = s.t;
+  if (!lit) s.litSince = null;
+  const tone = lit && (!s.everAcked || s.t - s.litSince < 1.2);
   $('master').classList.toggle('on', lit);
-  sound.update(s, lit);
+  sound.update(s, tone);
   const scr = view.update(s, g.h, dt);
   hud(s, g, scr);
   requestAnimationFrame(frame);

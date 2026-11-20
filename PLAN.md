@@ -10,7 +10,7 @@
 
 ### Prototype status (20 Nov 2026)
 
-6-DOF rigid body (`physics.js`), autopilot (`dap.js`), vehicle data (`lm.js`), checked by `node tools/test_physics.mjs` (27 checks, including engine-out abort, a stuck jet and quad isolation, boulders under the engine and under a footpad, a keyboard-style pilot that only follows the flight director, a too-fast start that needs manual full throttle, and an 8° slope).
+6-DOF rigid body (`physics.js`), autopilot (`dap.js`), vehicle data (`lm.js`), checked by `node tools/test_physics.mjs` (28 checks, including a 15 m/s breakup, engine-out abort, a stuck jet and quad isolation, boulders under the engine and under a footpad, a keyboard-style pilot that only follows the flight director, a too-fast start that needs manual full throttle, and an 8° slope).
 - Real values from Luminary 131 (Apollo 13 LM software, in the Space pilot project): descent engine exhaust velocity 2,955.9 m/s and FTP thrust 43,455 N, throttle lag 0.2 s, ascent exhaust velocity 3,030 m/s, 14 ms minimum jet pulse, the jet table for U/V rotation and X translation.
 - 16 RCS jets at their quads; torque about the moving centre of mass; inertia from the mass layout.
 - Rate command / attitude hold, P66 rate of descent (1 ft/s per click) or manual throttle, trim gimbal.
@@ -51,3 +51,10 @@ Start around 500 m above Surveyor crater. Apollo's final approach began about 2 
 Sound (`sound.js`): synthesized cabin sounds (engine rumble, RCS bangs, master alarm, thuds) and speech-synthesis callouts ("100 feet, down 3", "Contact light", "Sixty seconds", "We're go on that alarm"). No recordings yet; the Space pilot project has a reviewed original Apollo radio cue that could be reused.
 
 Look: post pass (`post.js`) with depth of field on the lander, ACES tone curve, grade, vignette, grain; far terrain gets visual-only relief outside the 2 m model; camera on the north side so the low eastern Sun lights the photo's sunlit side; contact shadow under the lander.
+
+## Crash, dust, film (20 Nov 2026)
+
+- Breakup (`physics.js`): over 12 g or a hard descent-stage hit, the stage interface fails; the ascent stage tumbles as its own rigid body (cabin breach above 3.5 m/s), the descent stage settles, 28 debris pieces fly ballistically. "VEHICLE BROKE UP — CREW ALIVE" is possible, and an upright intact ascent stage can still light its engine.
+- Dust (`dust.js`): radial streak sheet that hugs the terrain plus fast low-angle grains, from about 30 m, stopping with the engine; impact ejecta burst on breakup.
+- Look: subtle 16 mm film option (G, default on): fine mid-tone grain, 1 px gate weave, slight flicker; window camera (C) out of the LMP window like the Apollo data acquisition camera.
+- Alarm: A acknowledges (no longer a lean key); after the first acknowledge, repeat alarms light the light with a short chirp only.

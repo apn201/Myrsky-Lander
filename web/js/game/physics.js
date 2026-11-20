@@ -27,7 +27,7 @@ export function attitude(pitchBack = 0, yaw = 0) {
 export function newState(opts = {}) {
   const s = {
     t: 0,
-    phase: 'flying',            // flying | down | ascent | climbing | lost
+    phase: 'flying',            // flying | down | ascent | climbing | wreck | lost
     stage: 'full',              // full | ascent
     pos: [450, 0, 0],           // centre of mass, world: 450 m east of the target
     vel: [-14, -5, 0],
@@ -264,6 +264,7 @@ export function step(s, ctl, dt, world = FLAT) {
   s.q = qintegrate(s.q, s.w, dt);
   s.t += dt;
   if (s.descentPose?.vel) fallDescent(s, dt, world);
+  if (s.debris) moveDebris(s, dt, world);
 
   phaseLogic(s, grounded, m, world, dt);
   return s;
@@ -290,20 +291,26 @@ function hit(s, part, v) {
       log(s, 2, `RCS QUAD ${q} DESTROYED: its 4 jets are lost`);
     }
   } else if (part === 'ascent') {
-    if (crossed(2.0)) { log(s, 4, `ASCENT STAGE CABIN BREACHED (${v.toFixed(1)} m/s): crew lost`); s.crewLost = true; }
+    if (crossed(3.5)) { log(s, 4, `ASCENT STAGE CABIN BREACHED (${v.toFixed(1)} m/s): crew lost`); s.crewLost = true; }
     else if (crossed(0.3)) log(s, 2, `ASCENT STAGE HIT THE GROUND (${v.toFixed(1)} m/s)`);
   }
 }
 
 function phaseLogic(s, grounded, m, world, dt) {
   if (s.gNow > 35 && !s.crewLost) { s.crewLost = true; log(s, 4, `CREW LOST: ${s.gNow.toFixed(0)} g impact`); }
-  if (s.crewLost && s.phase !== 'lost') { s.phase = 'lost'; s.report = report(s, world); return; }
+  // a violent impact fails the stage interface: the ascent stage tears off
+  if (s.stage === 'full' && !s.brokeUp && (s.gNow > 12 || (s.partHit.descent ?? 0) > 4)) breakUp(s);
+  if (s.crewLost && s.phase !== 'lost') {
+    s.lostAt ??= s.t;
+    if (s.t - s.lostAt > 3) { s.phase = 'lost'; s.report = report(s, world); }   // let the wreck tumble first
+    return;
+  }
 
   const still = len(s.vel) < 0.05 && len(s.w) < 0.3 * DEG;
   const thrusting = (s.stage === 'full' && s.throttle * DPS.fRated > 0.2 * m * MOON_G) || (s.stage === 'ascent' && s.apsOn && s.apsFuel > 0);
-  if ((s.phase === 'flying' || s.phase === 'ascent') && grounded && still && !thrusting) {
+  if ((s.phase === 'flying' || s.phase === 'ascent' || s.phase === 'wreck') && grounded && still && !thrusting) {
     s.settle += dt;
-    if (s.settle > 1.5) { s.phase = s.stage === 'full' ? 'down' : 'lost'; s.report = report(s, world); }
+    if (s.settle > 1.5) { s.phase = s.stage === 'full' || s.brokeUp ? 'down' : 'lost'; s.report = report(s, world); }
   } else s.settle = 0;
 
   if (s.phase === 'ascent' && s.pos[1] - world.height(s.pos[0], s.pos[2]) > 300 && s.vel[1] > 0) {
@@ -343,17 +350,24 @@ export function report(s, world = FLAT) {
   if (s.stage === 'full') put(0, `Propellant left: descent ${s.dpsFuel.toFixed(0)} kg, RCS ${s.rcsFuel.toFixed(0)} kg`);
   put(0, `${Math.hypot(s.pos[0], s.pos[2]).toFixed(0)} m from the Apollo 12 landing spot`);
   const worst = Math.max(0, ...lines.map(l => l.sev));
+  if (s.brokeUp && !s.crewLost) put(3, `Ascent stage torn off and came to rest tilted ${(tilt(s) / DEG).toFixed(0)}°; cabin ${s.partHit.ascent >= 0.3 ? 'dented but holding pressure' : 'intact'}`);
   const verdict = s.crewLost ? 'CREW LOST'
+    : s.brokeUp && s.phase !== 'climbing' ? 'VEHICLE BROKE UP — CREW ALIVE'
     : s.phase === 'climbing' ? 'ASCENT UNDER WAY'
     : s.stage === 'ascent' ? 'ASCENT FAILED'
     : ['GOOD LANDING', 'HARD LANDING', 'LANDED WITH DAMAGE', 'SEVERE DAMAGE', 'CREW LOST'][worst];
-  const canLift = s.stage === 'full' && !s.crewLost && !(s.partHit.ascent >= 2);
+  const canLift = !s.crewLost && !(s.partHit.ascent >= 2) && (s.stage === 'full' || (s.brokeUp && tilt(s) < 50 * DEG && s.apsFuel > 0));
   return { verdict, worst, lines: lines.sort((a, b) => b.sev - a.sev), canLift, quadsLost };
 }
 
 // ---------- liftoff ----------
 export function liftoff(s) {
   if (s.phase !== 'down' || !s.report?.canLift) return false;
+  if (s.brokeUp) {                                    // already separated: just light the ascent engine
+    s.apsOn = true; s.phase = 'ascent'; s.settle = 0; s.report = null;
+    log(s, 0, 'ASCENT ENGINE ON from the wreck');
+    return true;
+  }
   return stage(s, false);
 }
 
@@ -378,6 +392,52 @@ function stage(s, inFlight) {
   s.touching = new Set();
   log(s, inFlight ? 2 : 0, inFlight ? 'ABORT STAGE: descent stage jettisoned, ascent engine on' : 'ABORT STAGE / ASCENT ENGINE ON');
   return true;
+}
+
+// Structural breakup on a violent impact: the stage interface fails, the ascent stage is flung off and
+// tumbles (simulated as its own rigid body, hull contacts and cabin breach as usual), the descent stage
+// settles, and pieces of foil, panels and struts fly out on ballistic paths.
+function breakUp(s) {
+  s.brokeUp = true;
+  const v0 = s.vel.slice();
+  let seed = Math.floor(s.t * 1000) + 17;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  stage(s, true);
+  s.apsOn = false;
+  s.phase = 'wreck';
+  s.events.pop();
+  log(s, 3, 'STRUCTURE FAILED: ascent stage torn off the descent stage');
+  s.descentPose.vel = [v0[0] * 0.25, Math.min(0, v0[1]) * 0.1, v0[2] * 0.25];
+  s.vel = [v0[0] * 0.7 + (rnd() - 0.5) * 2, Math.abs(v0[1]) * 0.22 + 1.2, v0[2] * 0.4];
+  s.w = [(rnd() - 0.5) * 0.4, (rnd() < 0.5 ? -1 : 1) * (0.6 + rnd() * 1.0), (rnd() - 0.5) * 0.4];
+  const at = add(s.descentPose.origin, [0, -0.6, 0]);
+  const kinds = ['foil', 'foil', 'foil', 'panel', 'strut', 'box'];
+  s.debris = Array.from({ length: 28 }, (_, i) => {
+    const a = rnd() * Math.PI * 2, el = 0.15 + rnd() * 1.0, sp = 2 + rnd() * 9;
+    return {
+      kind: kinds[i % kinds.length], size: 0.25 + rnd() * 0.9,
+      p: add(at, [Math.cos(a) * 1.8, rnd() * 1.4, Math.sin(a) * 1.8]),
+      v: [Math.cos(a) * Math.cos(el) * sp + v0[0] * 0.5, Math.sin(el) * sp, Math.sin(a) * Math.cos(el) * sp * 0.5],
+      ax: [rnd() - 0.5, rnd() - 0.5, rnd() - 0.5], ang: rnd() * 6.28, spin: (rnd() - 0.5) * 20, rest: false,
+    };
+  });
+  s.burst = s.t;     // for the dust burst
+}
+
+function moveDebris(s, dt, world) {
+  for (const d of s.debris) {
+    if (d.rest) continue;
+    d.v[1] -= MOON_G * dt;
+    d.p = addScaled(d.p, d.v, dt);
+    d.ang += d.spin * dt;
+    const g = world.height(d.p[0], d.p[2]) + d.size * 0.12;
+    if (d.p[1] < g) {
+      d.p[1] = g;
+      d.v = [d.v[0] * 0.55, -d.v[1] * 0.25, d.v[2] * 0.55];
+      d.spin *= 0.5;
+      if (len(d.v) < 0.4) d.rest = true;
+    }
+  }
 }
 
 // the jettisoned descent stage: ballistic until its footpads (or its body) reach the ground
